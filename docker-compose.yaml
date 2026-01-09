@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: whaley-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - ctf-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  instancer:
+    build: .
+    container_name: ctf-instancer
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "${INSTANCER_PORT:-8000}:8000"
+    volumes:
+      # Mount Docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount challenges directory (read-write for Challenge Manager)
+      - ./challenges:/challenges
+      # Mount logs directory
+      - ./logs:/app/logs
+      # Mount data directory for SQLite database
+      - ./data:/app/data
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=${DEBUG:-false}
+      - AUTH_MODE=${AUTH_MODE:-none}
+      - CTFD_URL=${CTFD_URL:-https://localhost}
+      - CTFD_API_KEY=${CTFD_API_KEY:-}  # Required if AUTH_MODE=ctfd
+      - ADMIN_KEY=${ADMIN_KEY:-}  # Required - generate with: openssl rand -hex 32
+      - CHALLENGES_DIR=/challenges
+      - PORT_RANGE_START=${PORT_RANGE_START:-10000}
+      - PORT_RANGE_END=${PORT_RANGE_END:-60000}
+      - MAX_INSTANCES_PER_USER=${MAX_INSTANCES_PER_USER:-3}
+      - MAX_INSTANCES_PER_TEAM=${MAX_INSTANCES_PER_TEAM:-5}
+      - INSTANCE_TIMEOUT=${INSTANCE_TIMEOUT:-600}
+      - PUBLIC_HOST=${PUBLIC_HOST:-auto}
+      - DYNAMIC_FLAGS_ENABLED=${DYNAMIC_FLAGS_ENABLED:-false}
+      - FLAG_PREFIX=${FLAG_PREFIX:-FLAG}
+      - TEAM_MODE=${TEAM_MODE:-auto}
+      # Database settings
+      - DATABASE_URL=sqlite+aiosqlite:///./data/whaley.db
+      - DATA_DIR=/app/data
+      # Redis for distributed locking
+      - REDIS_URL=redis://redis:6379/0
+      # Network isolation
+      - NETWORK_ISOLATION_ENABLED=${NETWORK_ISOLATION_ENABLED:-true}
+      - NETWORK_ICC_DISABLED=${NETWORK_ICC_DISABLED:-true}
+      - NETWORK_PREFIX=whaley
+      # Instance Forensics settings
+      - FORENSICS_AUTO_CAPTURE=${FORENSICS_AUTO_CAPTURE:-false}
+      - FORENSICS_MAX_SIZE_MB=${FORENSICS_MAX_SIZE_MB:-5}
+      - FORENSICS_TAIL_LINES=${FORENSICS_TAIL_LINES:-1000}
+      - FORENSICS_RETENTION_HOURS=${FORENSICS_RETENTION_HOURS:-168}
+      - FORENSICS_COMPRESSION=${FORENSICS_COMPRESSION:-true}
+    restart: unless-stopped
+    networks:
+      - ctf-network
+
+networks:
+  ctf-network:
+    name: ctf-instances
+    driver: bridge
+
+volumes:
+  redis_data:

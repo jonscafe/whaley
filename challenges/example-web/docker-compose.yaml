@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "${PORT_80:-8080}:80"
+    environment:
+      - FLAG=CTF{example_flag_here}
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5

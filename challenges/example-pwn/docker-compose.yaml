@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  pwn:
+    build: .
+    ports:
+      - "${PORT_9999:-9999}:9999"
+    environment:
+      - FLAG=CTF{buffer_overflow_ftw}
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.25
+    security_opt:
+      - no-new-privileges:true
