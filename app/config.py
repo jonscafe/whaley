@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # Docker settings
     DOCKER_NETWORK: str = "ctf-instances"
     
+    # Container resource limits (enforced on all instances)
+    CONTAINER_MAX_MEMORY: str = "512m"  # Max memory per container (e.g., "256m", "1g")
+    CONTAINER_MAX_CPU: float = 1.0  # Max CPU cores per container (e.g., 0.5, 1.0)
+    CONTAINER_PIDS_LIMIT: int = 256  # Max PIDs per container (fork bomb protection)
+    
     # Authentication settings
     AUTH_MODE: str = "ctfd"  # "ctfd" or "none"
     CTFD_URL: Optional[str] = None

@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 
-from .config import settings
+from .config import settings, Settings
 from .models import (
     UserInfo, SpawnRequest, SpawnResponse, 
     InstanceListResponse, ChallengeListResponse, Instance
@@ -129,6 +129,48 @@ def check_user_rate_limit(user_id: str) -> bool:
     return True
 
 
+async def _load_settings_from_db():
+    """Load persisted settings overrides from database on startup."""
+    # Map of setting types for proper casting
+    _SETTING_TYPES = {
+        "INSTANCE_TIMEOUT": int, "MAX_INSTANCES_PER_USER": int, "MAX_INSTANCES_PER_TEAM": int,
+        "CONTAINER_MAX_MEMORY": str, "CONTAINER_MAX_CPU": float, "CONTAINER_PIDS_LIMIT": int,
+        "PORT_RANGE_START": int, "PORT_RANGE_END": int,
+        "DYNAMIC_FLAGS_ENABLED": lambda v: str(v).lower() in ("true", "1", "yes"),
+        "FLAG_PREFIX": str,
+        "NETWORK_ISOLATION_ENABLED": lambda v: str(v).lower() in ("true", "1", "yes"),
+        "NETWORK_ICC_DISABLED": lambda v: str(v).lower() in ("true", "1", "yes"),
+        "FORENSICS_AUTO_CAPTURE": lambda v: str(v).lower() in ("true", "1", "yes"),
+        "FORENSICS_RETENTION_HOURS": int,
+        "PUBLIC_HOST": str,
+        
+        # New auth settings
+        "AUTH_MODE": str,
+        "CTFD_URL": str,
+        "CTFD_API_KEY": str,
+    }
+    try:
+        from .database.connection import get_async_session
+        from .database.models import WhaleySettings as WhaleySettingsModel
+        from sqlalchemy import select
+        
+        async with get_async_session() as session:
+            result = await session.execute(select(WhaleySettingsModel))
+            count = 0
+            for row in result.scalars().all():
+                if row.key in _SETTING_TYPES:
+                    try:
+                        cast_fn = _SETTING_TYPES[row.key]
+                        setattr(settings, row.key, cast_fn(row.value))
+                        count += 1
+                    except Exception as e:
+                        print(f"[Settings] Warning: Failed to apply {row.key}: {e}")
+        if count > 0:
+            print(f"[Settings] Loaded {count} setting overrides from database")
+    except Exception as e:
+        print(f"[Settings] Warning: Failed to load settings from DB: {e}")
+
+
 async def _auto_check_submissions():
     """Background task to automatically check submissions for cheating."""
     print(f"[AutoCheck] Starting automatic submission checker (interval: {SUBMISSION_CHECK_INTERVAL}s)")
@@ -184,6 +226,11 @@ async def lifespan(app: FastAPI):
     
     init_auth()
     docker_manager.load_challenges()
+    await docker_manager.load_challenge_settings()
+    
+    # Load settings overrides from database
+    await _load_settings_from_db()
+    
     await docker_manager.start_cleanup_task()
     
     # Initialize team mode
@@ -334,8 +381,8 @@ async def get_config():
 
 @app.get("/challenges", response_model=ChallengeListResponse)
 async def list_challenges(user: UserInfo = Depends(get_current_user)):
-    """List all available challenges that can be spawned."""
-    challenges = docker_manager.get_challenges()
+    """List active challenges that can be spawned."""
+    challenges = docker_manager.get_active_challenges()
     return ChallengeListResponse(challenges=challenges)
 
 
@@ -368,6 +415,10 @@ async def spawn_instance(
     
     client_ip = get_client_ip(req)
     team_mode = is_team_mode()
+    
+    # Block spawning inactive challenges
+    if not docker_manager.is_challenge_active(request.challenge_id):
+        raise HTTPException(status_code=403, detail="This challenge is currently inactive")
     
     success, message, instance = await docker_manager.spawn_instance(
         challenge_id=request.challenge_id,
@@ -1465,22 +1516,27 @@ async def admin_list_challenges(_: bool = Depends(verify_admin_key)):
                 is_loaded = item.name in loaded_ids
                 
                 # Also check if config's id is loaded (folder name might differ)
+                config_id = item.name
                 if has_config and not is_loaded:
                     try:
                         import yaml
                         with open(config_file) as f:
                             cfg = yaml.safe_load(f)
-                            if cfg and cfg.get('id') in loaded_ids:
-                                is_loaded = True
+                            if cfg and cfg.get('id'):
+                                config_id = cfg.get('id')
+                                if config_id in loaded_ids:
+                                    is_loaded = True
                     except:
                         pass
                 
                 challenges.append({
-                    "id": item.name,
+                    "id": config_id,
+                    "folder": item.name,
                     "path": str(item),
                     "has_config": has_config,
                     "has_compose": has_compose,
-                    "loaded": is_loaded
+                    "loaded": is_loaded,
+                    "is_active": docker_manager.is_challenge_active(config_id)
                 })
     
     return {"challenges": challenges}
@@ -1768,6 +1824,7 @@ async def admin_reload_challenge(
 ):
     """Reload challenge configuration."""
     docker_manager.load_challenges()
+    await docker_manager.load_challenge_settings()
     
     challenge = docker_manager.get_challenge(challenge_id)
     if challenge:
@@ -1781,6 +1838,353 @@ async def admin_reload_challenge(
             "success": False,
             "message": f"Challenge '{challenge_id}' failed to load (check challenge.yaml)"
         }
+
+
+# =============================================================================
+# Challenge Active/Inactive Toggle API
+# =============================================================================
+
+@app.post("/admin/api/challenges/{challenge_id}/toggle")
+async def admin_toggle_challenge(
+    challenge_id: str,
+    request: Request,
+    _: bool = Depends(verify_admin_key)
+):
+    """Toggle a challenge active/inactive status."""
+    from .database.connection import get_async_session
+    from .database.models import ChallengeSettings
+    from sqlalchemy import select
+    
+    body = await request.json()
+    is_active = body.get("is_active", True)
+    
+    async with get_async_session() as session:
+        result = await session.execute(
+            select(ChallengeSettings).where(ChallengeSettings.challenge_id == challenge_id)
+        )
+        cs = result.scalars().first()
+        
+        if cs:
+            cs.is_active = 1 if is_active else 0
+        else:
+            cs = ChallengeSettings(
+                challenge_id=challenge_id,
+                is_active=1 if is_active else 0
+            )
+            session.add(cs)
+        
+        await session.commit()
+    
+    # Reload settings cache
+    await docker_manager.load_challenge_settings()
+    
+    status = "active" if is_active else "inactive"
+    logger = get_event_logger()
+    await logger.log(
+        EventType.SYSTEM_START,
+        f"Challenge '{challenge_id}' set to {status}",
+        details={"challenge_id": challenge_id, "is_active": is_active}
+    )
+    
+    return {
+        "success": True,
+        "message": f"Challenge '{challenge_id}' is now {status}",
+        "is_active": is_active
+    }
+
+
+@app.get("/admin/api/challenges/settings")
+async def admin_get_challenge_settings(_: bool = Depends(verify_admin_key)):
+    """Get all challenge settings (active/inactive, resource overrides)."""
+    from .database.connection import get_async_session
+    from .database.models import ChallengeSettings
+    from sqlalchemy import select
+    
+    async with get_async_session() as session:
+        result = await session.execute(select(ChallengeSettings))
+        settings_list = result.scalars().all()
+    
+    settings_map = {}
+    for cs in settings_list:
+        settings_map[cs.challenge_id] = {
+            "is_active": bool(cs.is_active),
+            "max_memory": cs.max_memory,
+            "max_cpu": cs.max_cpu,
+        }
+    
+    return {"settings": settings_map}
+
+
+@app.put("/admin/api/challenges/{challenge_id}/resources")
+async def admin_set_challenge_resources(
+    challenge_id: str,
+    request: Request,
+    _: bool = Depends(verify_admin_key)
+):
+    """Set per-challenge resource limits (overrides global defaults)."""
+    from .database.connection import get_async_session
+    from .database.models import ChallengeSettings
+    from sqlalchemy import select
+    
+    body = await request.json()
+    max_memory = body.get("max_memory")  # e.g., "256m", null to use global
+    max_cpu = body.get("max_cpu")  # e.g., "0.5", null to use global
+    
+    async with get_async_session() as session:
+        result = await session.execute(
+            select(ChallengeSettings).where(ChallengeSettings.challenge_id == challenge_id)
+        )
+        cs = result.scalars().first()
+        
+        if cs:
+            cs.max_memory = max_memory
+            cs.max_cpu = max_cpu
+        else:
+            cs = ChallengeSettings(
+                challenge_id=challenge_id,
+                max_memory=max_memory,
+                max_cpu=max_cpu
+            )
+            session.add(cs)
+        
+        await session.commit()
+    
+    await docker_manager.load_challenge_settings()
+    
+    return {
+        "success": True,
+        "message": f"Resource limits updated for '{challenge_id}'",
+        "max_memory": max_memory,
+        "max_cpu": max_cpu
+    }
+
+
+# =============================================================================
+# Whaley Settings API (Global Settings via UI)
+# =============================================================================
+
+# Editable settings and their types/validation
+EDITABLE_SETTINGS = {
+    "INSTANCE_TIMEOUT": {"type": "int", "min": 60, "max": 86400, "label": "Instance Timeout (seconds)"},
+    "MAX_INSTANCES_PER_USER": {"type": "int", "min": 1, "max": 50, "label": "Max Instances Per User"},
+    "MAX_INSTANCES_PER_TEAM": {"type": "int", "min": 1, "max": 100, "label": "Max Instances Per Team"},
+    "CONTAINER_MAX_MEMORY": {"type": "str", "label": "Container Max Memory (e.g., 256m, 1g)"},
+    "CONTAINER_MAX_CPU": {"type": "float", "min": 0.1, "max": 16.0, "label": "Container Max CPU Cores"},
+    "CONTAINER_PIDS_LIMIT": {"type": "int", "min": 16, "max": 4096, "label": "Container PID Limit"},
+    "PORT_RANGE_START": {"type": "int", "min": 1024, "max": 65535, "label": "Port Range Start"},
+    "PORT_RANGE_END": {"type": "int", "min": 1024, "max": 65535, "label": "Port Range End"},
+    "DYNAMIC_FLAGS_ENABLED": {"type": "bool", "label": "Dynamic Flags Enabled"},
+    "FLAG_PREFIX": {"type": "str", "label": "Flag Prefix"},
+    "NETWORK_ISOLATION_ENABLED": {"type": "bool", "label": "Network Isolation"},
+    "NETWORK_ICC_DISABLED": {"type": "bool", "label": "Disable Inter-Container Comm."},
+    "FORENSICS_AUTO_CAPTURE": {"type": "bool", "label": "Forensics Auto Capture"},
+    "FORENSICS_RETENTION_HOURS": {"type": "int", "min": 1, "max": 8760, "label": "Forensics Retention (hours)"},
+    "PUBLIC_HOST": {"type": "str", "label": "Public Host (auto or IP/domain)"},
+    
+    # Auth and CTFd settings
+    "AUTH_MODE": {"type": "select", "options": ["ctfd", "none"], "label": "Authentication Mode"},
+    "CTFD_URL": {"type": "str", "label": "CTFd URL (e.g., https://ctf.example.com)"},
+    "CTFD_API_KEY": {"type": "str", "label": "CTFd Admin/Access Token"},
+}
+
+
+@app.get("/admin/api/settings")
+async def admin_get_settings(_: bool = Depends(verify_admin_key)):
+    """Get all editable Whaley settings with current values."""
+    from .database.connection import get_async_session
+    from .database.models import WhaleySettings as WhaleySettingsModel
+    from sqlalchemy import select
+    
+    # Get DB overrides
+    db_overrides = {}
+    try:
+        async with get_async_session() as session:
+            result = await session.execute(select(WhaleySettingsModel))
+            for row in result.scalars().all():
+                db_overrides[row.key] = row.value
+    except Exception as e:
+        print(f"Warning: Failed to load settings from DB: {e}")
+    
+    result = {}
+    for key, meta in EDITABLE_SETTINGS.items():
+        # Current effective value (DB override or env/default)
+        current_value = getattr(settings, key, None)
+        db_value = db_overrides.get(key)
+        
+        result[key] = {
+            "value": current_value,
+            "db_override": db_value,
+            "has_override": db_value is not None,
+            **meta
+        }
+    
+    return {"settings": result}
+
+
+@app.put("/admin/api/settings")
+async def admin_update_settings(
+    request: Request,
+    _: bool = Depends(verify_admin_key)
+):
+    """Update Whaley settings. Changes are persisted to database and applied immediately."""
+    from .database.connection import get_async_session
+    from .database.models import WhaleySettings as WhaleySettingsModel
+    from sqlalchemy import select
+    
+    body = await request.json()
+    updates = body.get("settings", {})
+    
+    applied = {}
+    errors = {}
+    
+    for key, value in updates.items():
+        if key not in EDITABLE_SETTINGS:
+            errors[key] = "Unknown setting"
+            continue
+        
+        meta = EDITABLE_SETTINGS[key]
+        
+        # Validate and cast value
+        try:
+            if meta["type"] == "int":
+                value = int(value)
+                if "min" in meta and value < meta["min"]:
+                    errors[key] = f"Minimum value is {meta['min']}"
+                    continue
+                if "max" in meta and value > meta["max"]:
+                    errors[key] = f"Maximum value is {meta['max']}"
+                    continue
+            elif meta["type"] == "float":
+                value = float(value)
+                if "min" in meta and value < meta["min"]:
+                    errors[key] = f"Minimum value is {meta['min']}"
+                    continue
+                if "max" in meta and value > meta["max"]:
+                    errors[key] = f"Maximum value is {meta['max']}"
+                    continue
+            elif meta["type"] == "bool":
+                value = str(value).lower() in ("true", "1", "yes")
+            else:
+                value = str(value)
+        except (ValueError, TypeError) as e:
+            errors[key] = f"Invalid value: {e}"
+            continue
+        
+        # Store in database
+        try:
+            async with get_async_session() as session:
+                result = await session.execute(
+                    select(WhaleySettingsModel).where(WhaleySettingsModel.key == key)
+                )
+                existing = result.scalars().first()
+                
+                if existing:
+                    existing.value = str(value)
+                else:
+                    session.add(WhaleySettingsModel(key=key, value=str(value)))
+                
+                await session.commit()
+        except Exception as e:
+            errors[key] = f"Database error: {e}"
+            continue
+        
+        # Apply to running settings object
+        try:
+            setattr(settings, key, value)
+            applied[key] = value
+        except Exception as e:
+            errors[key] = f"Failed to apply: {e}"
+    
+    # Log the change
+    if applied:
+        logger = get_event_logger()
+        await logger.log(
+            EventType.SYSTEM_START,
+            f"Settings updated: {', '.join(applied.keys())}",
+            details={"applied": {k: str(v) for k, v in applied.items()}}
+        )
+    
+    return {
+        "success": len(errors) == 0,
+        "applied": {k: str(v) for k, v in applied.items()},
+        "errors": errors,
+        "message": f"Applied {len(applied)} settings" + (f", {len(errors)} errors" if errors else "")
+    }
+
+
+@app.delete("/admin/api/settings/{key}")
+async def admin_reset_setting(
+    key: str,
+    _: bool = Depends(verify_admin_key)
+):
+    """Reset a setting to its default (remove DB override)."""
+    from .database.connection import get_async_session
+    from .database.models import WhaleySettings as WhaleySettingsModel
+    from sqlalchemy import select, delete
+    
+    if key not in EDITABLE_SETTINGS:
+        raise HTTPException(status_code=400, detail="Unknown setting")
+    
+    try:
+        async with get_async_session() as session:
+            await session.execute(
+                delete(WhaleySettingsModel).where(WhaleySettingsModel.key == key)
+            )
+            await session.commit()
+        
+        # Reset to default from Settings class
+        default_settings = Settings()
+        default_value = getattr(default_settings, key, None)
+        if default_value is not None:
+            setattr(settings, key, default_value)
+        
+        return {
+            "success": True,
+            "message": f"Setting '{key}' reset to default: {default_value}",
+            "default_value": str(default_value) if default_value is not None else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset setting: {e}")
+
+
+@app.post("/admin/api/settings/load")
+async def admin_reload_settings(_: bool = Depends(verify_admin_key)):
+    """Reload all settings from database (apply DB overrides)."""
+    from .database.connection import get_async_session
+    from .database.models import WhaleySettings as WhaleySettingsModel
+    from sqlalchemy import select
+    
+    applied = []
+    try:
+        async with get_async_session() as session:
+            result = await session.execute(select(WhaleySettingsModel))
+            for row in result.scalars().all():
+                if row.key in EDITABLE_SETTINGS:
+                    meta = EDITABLE_SETTINGS[row.key]
+                    try:
+                        if meta["type"] == "int":
+                            val = int(row.value)
+                        elif meta["type"] == "float":
+                            val = float(row.value)
+                        elif meta["type"] == "bool":
+                            val = row.value.lower() in ("true", "1", "yes")
+                        else:
+                            val = row.value
+                        setattr(settings, row.key, val)
+                        applied.append(row.key)
+                    except Exception as e:
+                        print(f"Warning: Failed to apply setting {row.key}: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload settings: {e}")
+    
+    # Also reload challenge settings
+    await docker_manager.load_challenge_settings()
+    
+    return {
+        "success": True,
+        "applied": applied,
+        "message": f"Reloaded {len(applied)} settings from database"
+    }
 
 
 if __name__ == "__main__":

@@ -39,13 +39,15 @@
 - **Multi-Port Challenges** — Support for complex multi-service challenges
 - **Auto-Cleanup** — Instances automatically terminated after timeout
 - **Docker Compose Support** — Standard `.yaml` and `.yml` formats
-- **Resource Limits** — Memory and CPU constraints per instance
+- **Enforced Resource Limits** — Global memory, CPU & PID caps enforced on all containers
+- **Per-Challenge Resource Overrides** — Fine-tune limits per challenge from admin panel
 
 ### 🔐 Authentication & Security
 - **CTFd Integration** — Validate users via CTFd access tokens
 - **No-Auth Mode** — IP-based identification for open events
 - **Network Isolation** — Each instance in its own Docker network
 - **Distributed Locking** — Redis-based locks for multi-worker safety
+- **Fork Bomb Protection** — PID limits per container
 
 </td>
 <td width="50%" valign="top">
@@ -62,6 +64,8 @@
 - **Instance Forensics** — Capture logs on termination or on-demand
 - **Admin Dashboard** — Web UI for monitoring and management
 - **Challenge Manager** — Upload & edit challenges without SSH
+- **Challenge Toggle** — Activate/deactivate challenges from admin panel
+- **Admin Settings UI** — Configure all Whaley settings via the web UI (no env/compose edits needed)
 - **Event Logging** — Comprehensive audit trail with Docker errors
 
 </td>
@@ -141,7 +145,14 @@ REDIS_URL=redis://redis:6379/0
 # Network Isolation (recommended)
 NETWORK_ISOLATION_ENABLED=true
 NETWORK_ICC_DISABLED=true
+
+# Resource Limits (enforced on all containers)
+CONTAINER_MAX_MEMORY=512m         # Max memory per container
+CONTAINER_MAX_CPU=1.0             # Max CPU cores per container
+CONTAINER_PIDS_LIMIT=256          # Max PIDs per container (fork bomb protection)
 ```
+
+> 💡 **Tip**: Most settings (including Authentication & CTFd integration) can be configured instantly via the **Admin Panel → ⚙️ Settings** tab.
 
 > 📖 **Full configuration guide**: See [DOCUMENTATION.md](DOCUMENTATION.md#configuration)
 
@@ -187,6 +198,8 @@ services:
     mem_limit: 256m
     cpus: 0.5
 ```
+
+> ⚠️ **Resource enforcement**: Even if a challenge sets `mem_limit: 2g`, Whaley will cap it to the global `CONTAINER_MAX_MEMORY` (default `512m`). You can set per-challenge overrides via the admin panel.
 
 > 📖 **More examples**: See [DOCUMENTATION.md](DOCUMENTATION.md#challenge-structure)
 
@@ -272,6 +285,46 @@ Ports Required = Concurrent Instances × Ports per Challenge
 
 ---
 
+## ⚙️ Admin Settings & Challenge Management
+
+### Live Settings (No Restart Required)
+
+All key Whaley settings can be changed at runtime via the **Admin Panel → ⚙️ Settings** tab:
+
+| Category | Settings |
+|----------|----------|
+| **Instance** | Timeout, max instances per user/team |
+| **Resources** | Container max memory, CPU cores, PID limit |
+| **Network** | Port range, isolation, public host |
+| **Features** | Dynamic flags, flag prefix |
+| **Authentication** | Auth mode (CTFd/None), CTFd URL, Admin Key |
+| **Forensics** | Auto capture, retention period |
+
+Changes persist to the database and survive container restarts—no need to edit `docker-compose.yaml` or `.env` files.
+
+### Challenge Active/Inactive Toggle
+
+Control which challenges are visible and spawnable from the **Challenge Manager** tab:
+
+- **🟢 Active** — Visible on the user dashboard, can be spawned
+- **🔴 Inactive** — Hidden from users, spawn requests rejected (HTTP 403)
+
+Use this during competitions to stage challenges for later rounds, or to quickly disable a broken challenge without deleting it.
+
+### Enforced Resource Limits
+
+Whaley enforces maximum resource limits on **every** container, regardless of what the challenge's `docker-compose.yaml` specifies:
+
+```
+CONTAINER_MAX_MEMORY=512m    # Caps mem_limit in compose files
+CONTAINER_MAX_CPU=1.0        # Caps cpus in compose files
+CONTAINER_PIDS_LIMIT=256     # Injects pids_limit (fork bomb protection)
+```
+
+Per-challenge overrides can be set via the admin API if certain challenges need more resources.
+
+---
+
 ## 📖 Documentation
 
 For comprehensive documentation, see **[DOCUMENTATION.md](DOCUMENTATION.md)**:
@@ -283,6 +336,7 @@ For comprehensive documentation, see **[DOCUMENTATION.md](DOCUMENTATION.md)**:
 - 📈 [Instance Forensics](DOCUMENTATION.md#instance-forensics)
 - 🔍 [Resource Monitoring](DOCUMENTATION.md#resource-monitoring)
 - 📊 [Capacity Planning](DOCUMENTATION.md#capacity-planning)
+- ⚙️ [Admin Settings & Challenge Management](DOCUMENTATION.md#admin-settings)
 
 ---
 

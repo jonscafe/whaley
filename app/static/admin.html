@@ -498,6 +498,151 @@
             background: var(--accent-primary)10;
         }
 
+        .challenge-admin-card.inactive {
+            opacity: 0.6;
+            border-left: 3px solid var(--accent-danger);
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--text-muted);
+            transition: 0.3s;
+            border-radius: 22px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: var(--accent-success);
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(18px);
+        }
+
+        /* Settings page styles */
+        .settings-section {
+            margin-bottom: 24px;
+        }
+
+        .settings-section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 12px;
+        }
+
+        .setting-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .setting-item.has-override {
+            border-left: 3px solid var(--accent-primary);
+        }
+
+        .setting-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .setting-label .override-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-primary);
+        }
+
+        .setting-key {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .setting-input {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .setting-input input[type="text"],
+        .setting-input input[type="number"] {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 6px 10px;
+            color: var(--text-color);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+        }
+
+        .setting-input input:focus {
+            border-color: var(--accent-primary);
+            outline: none;
+        }
+
+        .setting-reset {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
+
+        .setting-reset:hover {
+            color: var(--accent-danger);
+            opacity: 1;
+        }
+
         .file-browser {
             display: grid;
             grid-template-columns: 280px 1fr;
@@ -850,6 +995,10 @@
                 <button class="nav-tab" data-page="monitoring" onclick="switchPage('monitoring')">
                     <span class="tab-icon">📈</span>
                     <span>Monitoring</span>
+                </button>
+                <button class="nav-tab" data-page="settings" onclick="switchPage('settings')">
+                    <span class="tab-icon">⚙️</span>
+                    <span>Settings</span>
                 </button>
             </nav>
 
@@ -1448,6 +1597,66 @@
                     </div>
                 </section>
             </div>
+
+            <!-- Page 6: Settings -->
+            <div class="tab-page" id="page-settings">
+                <section class="card">
+                    <div class="card-header">
+                        <h2>⚙️ Whaley Settings</h2>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-sm" onclick="loadSettings()">
+                                <span class="btn-icon">🔄</span> Refresh
+                            </button>
+                            <button class="btn btn-primary btn-sm" onclick="saveSettings()">
+                                <span class="btn-icon">💾</span> Save All
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.85rem;">
+                            Configure Whaley settings directly from the admin panel. Changes are persisted to the database 
+                            and applied immediately. Settings with a <span style="color: var(--accent-primary);">●</span> indicator 
+                            have been overridden from their defaults.
+                        </p>
+
+                        <!-- Instance Settings -->
+                        <div class="settings-section">
+                            <h3 class="settings-section-title">📦 Instance Settings</h3>
+                            <div class="settings-grid" id="settings-instance"></div>
+                        </div>
+
+                        <!-- Resource Limits -->
+                        <div class="settings-section">
+                            <h3 class="settings-section-title">🔒 Resource Limits</h3>
+                            <div class="settings-grid" id="settings-resources"></div>
+                        </div>
+
+                        <!-- Network Settings -->
+                        <div class="settings-section">
+                            <h3 class="settings-section-title">🌐 Network & Ports</h3>
+                            <div class="settings-grid" id="settings-network"></div>
+                        </div>
+
+                        <!-- Features -->
+                        <div class="settings-section">
+                            <h3 class="settings-section-title">🚩 Features</h3>
+                            <div class="settings-grid" id="settings-features"></div>
+                        </div>
+
+                        <!-- Authentication & CTFd -->
+                        <div class="settings-section">
+                            <h3 class="settings-section-title">🔐 Authentication</h3>
+                            <div class="settings-grid" id="settings-auth"></div>
+                        </div>
+
+                        <!-- Forensics -->
+                        <div class="settings-section">
+                            <h3 class="settings-section-title">🔍 Forensics</h3>
+                            <div class="settings-grid" id="settings-forensics"></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
         </main>
 
         <!-- Footer -->
@@ -1476,7 +1685,7 @@
 
             // Check URL hash for page
             const hash = window.location.hash.replace('#', '');
-            if (['dashboard', 'logs', 'challenges'].includes(hash)) {
+            if (['dashboard', 'logs', 'challenges', 'flags', 'monitoring', 'settings'].includes(hash)) {
                 currentTab = hash;
             }
 
@@ -1543,6 +1752,9 @@
                     break;
                 case 'monitoring':
                     await loadMonitoringData();
+                    break;
+                case 'settings':
+                    await loadSettings();
                     break;
             }
         }
@@ -3267,12 +3479,18 @@
         // Challenge Manager Functions
         // =============================================================================
 
+        let challengeSettingsCache = {};
+
         async function loadChallengesList() {
             const container = document.getElementById('challenges-list-admin');
 
             try {
-                const data = await adminApi('/admin/api/challenges/list');
+                const [data, settingsData] = await Promise.all([
+                    adminApi('/admin/api/challenges/list'),
+                    adminApi('/admin/api/challenges/settings')
+                ]);
                 const challenges = data.challenges || [];
+                challengeSettingsCache = settingsData.settings || {};
 
                 if (challenges.length === 0) {
                     container.innerHTML = `
@@ -3303,15 +3521,24 @@
                         statusColor = 'var(--accent-warning)';
                     }
 
+                    const cs = challengeSettingsCache[ch.id] || {};
+                    const isActive = cs.is_active !== false; // default active
+                    const inactiveClass = isActive ? '' : 'inactive';
+
                     return `
-                        <div class="challenge-admin-card ${selectedChallenge === ch.id ? 'selected' : ''}" data-id="${ch.id}">
+                        <div class="challenge-admin-card ${selectedChallenge === ch.id ? 'selected' : ''} ${inactiveClass}" data-id="${ch.id}">
                             <div>
                                 <strong>${escapeHtml(ch.id)}</strong>
                                 <span style="margin-left: 10px; font-size: 0.8rem; color: ${statusColor}">
                                     ${status}
                                 </span>
+                                ${!isActive ? '<span style="margin-left: 8px; font-size: 0.8rem; color: var(--accent-danger);">🔴 Inactive</span>' : '<span style="margin-left: 8px; font-size: 0.8rem; color: var(--accent-success);">🟢 Active</span>'}
                             </div>
-                            <div style="display: flex; gap: 8px;">
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <label class="toggle-switch" title="${isActive ? 'Active - Click to deactivate' : 'Inactive - Click to activate'}">
+                                    <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleChallenge('${ch.id}', this.checked)">
+                                    <span class="toggle-slider"></span>
+                                </label>
                                 <button class="btn btn-primary btn-sm" onclick="selectChallenge('${ch.id}')">
                                     📝 Edit Files
                                 </button>
@@ -3642,6 +3869,203 @@
                 }
             } catch (error) {
                 showToast('Failed to delete file', 'error');
+            }
+        }
+
+        // ============== Challenge Toggle ==============
+
+        async function toggleChallenge(challengeId, isActive) {
+            try {
+                const response = await fetch(`/admin/api/challenges/${challengeId}/toggle`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Admin-Key': adminKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ is_active: isActive })
+                });
+
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    showToast(`Challenge '${challengeId}' is now ${isActive ? 'active' : 'inactive'}`, 'success');
+                    await loadChallengesList();
+                } else {
+                    showToast(data.detail || 'Failed to toggle challenge', 'error');
+                    await loadChallengesList(); // Revert UI
+                }
+            } catch (error) {
+                showToast('Failed to toggle challenge', 'error');
+                await loadChallengesList();
+            }
+        }
+
+        // ============== Settings Management ==============
+
+        let settingsCache = {};
+
+        const SETTINGS_SECTIONS = {
+            'settings-instance': ['INSTANCE_TIMEOUT', 'MAX_INSTANCES_PER_USER', 'MAX_INSTANCES_PER_TEAM'],
+            'settings-resources': ['CONTAINER_MAX_MEMORY', 'CONTAINER_MAX_CPU', 'CONTAINER_PIDS_LIMIT'],
+            'settings-network': ['PORT_RANGE_START', 'PORT_RANGE_END', 'NETWORK_ISOLATION_ENABLED', 'NETWORK_ICC_DISABLED', 'PUBLIC_HOST'],
+            'settings-auth': ['AUTH_MODE', 'CTFD_URL', 'CTFD_API_KEY'],
+            'settings-features': ['DYNAMIC_FLAGS_ENABLED', 'FLAG_PREFIX'],
+            'settings-forensics': ['FORENSICS_AUTO_CAPTURE', 'FORENSICS_RETENTION_HOURS']
+        };
+
+        async function loadSettings() {
+            try {
+                const data = await adminApi('/admin/api/settings');
+                settingsCache = data.settings || {};
+                renderSettings();
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+                showToast('Failed to load settings', 'error');
+            }
+        }
+
+        function renderSettings() {
+            for (const [containerId, keys] of Object.entries(SETTINGS_SECTIONS)) {
+                const container = document.getElementById(containerId);
+                if (!container) continue;
+
+                container.innerHTML = keys.map(key => {
+                    const s = settingsCache[key];
+                    if (!s) return '';
+
+                    const hasOverride = s.has_override;
+                    const overrideClass = hasOverride ? 'has-override' : '';
+
+                    let inputHtml = '';
+                    if (s.type === 'bool') {
+                        const checked = String(s.value).toLowerCase() === 'true' || s.value === true;
+                        inputHtml = `
+                            <div class="setting-input">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="setting-${key}" ${checked ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <span style="font-size: 0.85rem; color: var(--text-muted);">${checked ? 'Enabled' : 'Disabled'}</span>
+                            </div>
+                        `;
+                    } else if (s.type === 'select') {
+                        // Dropdown for select type
+                        const optionsHtml = (s.options || []).map(opt => 
+                            `<option value="${opt}" ${String(s.value) === String(opt) ? 'selected' : ''}>${opt}</option>`
+                        ).join('');
+                        
+                        inputHtml = `
+                            <div class="setting-input">
+                                <select id="setting-${key}" class="setting-select">
+                                    ${optionsHtml}
+                                </select>
+                            </div>
+                        `;
+                    } else if (s.type === 'int') {
+                        inputHtml = `
+                            <div class="setting-input">
+                                <input type="number" id="setting-${key}" value="${s.value}" 
+                                    ${s.min !== undefined ? `min="${s.min}"` : ''} 
+                                    ${s.max !== undefined ? `max="${s.max}"` : ''}>
+                            </div>
+                        `;
+                    } else if (s.type === 'float') {
+                        inputHtml = `
+                            <div class="setting-input">
+                                <input type="number" id="setting-${key}" value="${s.value}" step="0.1"
+                                    ${s.min !== undefined ? `min="${s.min}"` : ''} 
+                                    ${s.max !== undefined ? `max="${s.max}"` : ''}>
+                            </div>
+                        `;
+                    } else {
+                        inputHtml = `
+                            <div class="setting-input">
+                                <input type="text" id="setting-${key}" value="${escapeHtml(String(s.value || ''))}">
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <div class="setting-item ${overrideClass}">
+                            <div class="setting-label">
+                                ${hasOverride ? '<span class="override-dot"></span>' : ''}
+                                ${escapeHtml(s.label)}
+                                ${hasOverride ? `<button class="setting-reset" onclick="resetSetting('${key}')" title="Reset to default">↩️</button>` : ''}
+                            </div>
+                            <div class="setting-key">${key}</div>
+                            ${inputHtml}
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Add toggle label update listeners
+            document.querySelectorAll('.setting-item .toggle-switch input').forEach(input => {
+                input.addEventListener('change', function() {
+                    const label = this.closest('.setting-input').querySelector('span');
+                    if (label) label.textContent = this.checked ? 'Enabled' : 'Disabled';
+                });
+            });
+        }
+
+        async function saveSettings() {
+            const updates = {};
+
+            for (const keys of Object.values(SETTINGS_SECTIONS)) {
+                for (const key of keys) {
+                    const el = document.getElementById(`setting-${key}`);
+                    if (!el) continue;
+
+                    const s = settingsCache[key];
+                    if (!s) continue;
+
+                    let value;
+                    if (s.type === 'bool') {
+                        value = el.checked;
+                    } else {
+                        value = el.value;
+                    }
+
+                    // Only include changed values
+                    const currentStr = String(s.value);
+                    const newStr = String(value);
+                    if (currentStr !== newStr) {
+                        updates[key] = value;
+                    }
+                }
+            }
+
+            if (Object.keys(updates).length === 0) {
+                showToast('No changes to save', 'info');
+                return;
+            }
+
+            try {
+                const data = await adminApi('/admin/api/settings', 'PUT', { settings: updates });
+                
+                if (data.success) {
+                    showToast(`Saved ${Object.keys(data.applied).length} settings`, 'success');
+                } else {
+                    const errMsg = Object.entries(data.errors || {}).map(([k, v]) => `${k}: ${v}`).join(', ');
+                    showToast(`Saved with errors: ${errMsg}`, 'warning');
+                }
+
+                await loadSettings(); // Refresh
+            } catch (error) {
+                showToast('Failed to save settings', 'error');
+            }
+        }
+
+        async function resetSetting(key) {
+            if (!confirm(`Reset "${key}" to its default value?`)) return;
+
+            try {
+                const data = await adminApi(`/admin/api/settings/${key}`, 'DELETE');
+                if (data.success) {
+                    showToast(`Reset "${key}" to default: ${data.default_value}`, 'success');
+                    await loadSettings();
+                }
+            } catch (error) {
+                showToast('Failed to reset setting', 'error');
             }
         }
 

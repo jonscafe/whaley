@@ -54,6 +54,34 @@ class EventLog(Base):
         return f"<EventLog(id={self.id}, type={self.event_type}, user={self.username})>"
 
 
+class ChallengeSettings(Base):
+    """Per-challenge settings (active/inactive, resource overrides, etc.)."""
+    __tablename__ = "challenge_settings"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    challenge_id = Column(String(128), unique=True, nullable=False, index=True)
+    is_active = Column(Integer, default=1, nullable=False)  # 1=active, 0=inactive
+    max_memory = Column(String(32), nullable=True)  # Override per-challenge memory limit
+    max_cpu = Column(String(32), nullable=True)  # Override per-challenge CPU limit
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<ChallengeSettings(challenge={self.challenge_id}, active={self.is_active})>"
+
+
+class WhaleySettings(Base):
+    """Global Whaley settings (persisted in DB, editable via admin panel)."""
+    __tablename__ = "whaley_settings"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    key = Column(String(128), unique=True, nullable=False, index=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<WhaleySettings(key={self.key}, value={self.value})>"
+
+
 class InstanceState(Base):
     """Active instance state for recovery and tracking."""
     __tablename__ = "instance_states"

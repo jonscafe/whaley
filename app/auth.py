@@ -14,10 +14,16 @@ security = HTTPBearer(auto_error=False)
 class CTFdAuth:
     """CTFd authentication handler."""
     
-    def __init__(self, ctfd_url: str, api_key: Optional[str] = None):
-        self.ctfd_url = ctfd_url.rstrip('/')
-        self.api_key = api_key
+    def __init__(self):
         self._ctfd_mode_cache: Optional[str] = None  # Cache for CTFd mode (users/teams)
+
+    @property
+    def ctfd_url(self) -> str:
+        return (settings.CTFD_URL or "").rstrip('/')
+
+    @property
+    def api_key(self) -> str:
+        return settings.CTFD_API_KEY or ""
     
     async def get_ctfd_mode(self) -> str:
         """
@@ -26,6 +32,9 @@ class CTFdAuth:
         """
         if self._ctfd_mode_cache:
             return self._ctfd_mode_cache
+
+        if not self.ctfd_url or not self.api_key:
+            return "users"
         
         try:
             async with httpx.AsyncClient() as client:
@@ -176,7 +185,7 @@ class NoAuth:
 
 
 # Global auth instances
-ctfd_auth: Optional[CTFdAuth] = None
+ctfd_auth: CTFdAuth = CTFdAuth()
 no_auth = NoAuth()
 
 # Team mode state
@@ -185,9 +194,8 @@ _team_mode_enabled: Optional[bool] = None
 
 def init_auth():
     """Initialize authentication based on settings."""
-    global ctfd_auth
-    if settings.AUTH_MODE == AuthMode.CTFD and settings.CTFD_URL:
-        ctfd_auth = CTFdAuth(settings.CTFD_URL, settings.CTFD_API_KEY)
+    # CTFdAuth is now always initialized and reads from settings dynamically
+    pass
 
 
 async def init_team_mode() -> bool:

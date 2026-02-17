@@ -49,6 +49,11 @@ logs/*.jsonl
 # Docker (challenge outputs)
 challenges/*/tmp/
 
+# Challenge files (user-uploaded, not tracked)
+challenges/archive/
+challenges/archive-1/
+challenges/secure-notes/
+
 # Testing
 .pytest_cache/
 .coverage
@@ -67,3 +72,6 @@ whaley.db
 *.db-wal
 *.db-shm
 data/
+
+# Chall dir
+challenges/*

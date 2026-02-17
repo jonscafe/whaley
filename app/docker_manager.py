@@ -117,6 +117,12 @@ class DockerManager:
         
         # Docker client (initialized lazily)
         self._docker = None
+        
+        # Per-challenge resource override cache (loaded from DB)
+        self._challenge_resource_overrides: Dict[str, Dict] = {}
+        
+        # Inactive challenge IDs (loaded from DB)
+        self._inactive_challenges: set = set()
     
     @property
     def docker(self):
@@ -153,8 +159,48 @@ class DockerManager:
                         print(f"Failed to load challenge from {item}: {e}")
     
     def get_challenges(self) -> List[ChallengeInfo]:
-        """Get list of available challenges."""
+        """Get list of all challenges (including inactive, for admin)."""
         return [c.to_info() for c in self.challenges.values()]
+    
+    def get_active_challenges(self) -> List[ChallengeInfo]:
+        """Get list of active challenges only (for user dashboard)."""
+        return [
+            c.to_info() for c in self.challenges.values()
+            if c.id not in self._inactive_challenges
+        ]
+    
+    def is_challenge_active(self, challenge_id: str) -> bool:
+        """Check if a challenge is active."""
+        return challenge_id not in self._inactive_challenges
+    
+    async def load_challenge_settings(self) -> None:
+        """Load challenge settings (active/inactive, resource overrides) from database."""
+        try:
+            from .database.connection import get_async_session
+            from .database.models import ChallengeSettings
+            from sqlalchemy import select
+            
+            async with get_async_session() as session:
+                result = await session.execute(select(ChallengeSettings))
+                settings_list = result.scalars().all()
+            
+            self._inactive_challenges.clear()
+            self._challenge_resource_overrides.clear()
+            
+            for cs in settings_list:
+                if cs.is_active == 0:
+                    self._inactive_challenges.add(cs.challenge_id)
+                overrides = {}
+                if cs.max_memory:
+                    overrides['max_memory'] = cs.max_memory
+                if cs.max_cpu:
+                    overrides['max_cpu'] = cs.max_cpu
+                if overrides:
+                    self._challenge_resource_overrides[cs.challenge_id] = overrides
+            
+            print(f"Loaded challenge settings: {len(self._inactive_challenges)} inactive, {len(self._challenge_resource_overrides)} with resource overrides")
+        except Exception as e:
+            print(f"Warning: Failed to load challenge settings from DB: {e}")
     
     def get_challenge(self, challenge_id: str) -> Optional[ChallengeConfig]:
         """Get a specific challenge configuration."""
@@ -466,6 +512,75 @@ class DockerManager:
         
         return replacements
     
+    def _enforce_resource_limits(
+        self,
+        compose_file: Path,
+        challenge_id: str
+    ) -> None:
+        """
+        Enforce maximum resource limits into a docker-compose file.
+        
+        Reads the compose file, checks each service's resource settings,
+        and caps them at the global or per-challenge maximum.
+        Also adds pids_limit for fork bomb protection.
+        """
+        try:
+            with open(compose_file) as f:
+                compose_data = yaml.safe_load(f)
+            
+            if not compose_data or 'services' not in compose_data:
+                return
+            
+            # Get per-challenge overrides from DB cache
+            challenge_limits = self._challenge_resource_overrides.get(challenge_id, {})
+            
+            max_memory = challenge_limits.get('max_memory') or settings.CONTAINER_MAX_MEMORY
+            max_cpu = float(challenge_limits.get('max_cpu') or settings.CONTAINER_MAX_CPU)
+            pids_limit = settings.CONTAINER_PIDS_LIMIT
+            
+            modified = False
+            for service_name, service_config in compose_data.get('services', {}).items():
+                if not isinstance(service_config, dict):
+                    continue
+                
+                # Enforce memory limit
+                if max_memory:
+                    current_mem = service_config.get('mem_limit')
+                    if not current_mem or self._parse_memory(str(current_mem)) > self._parse_memory(max_memory):
+                        service_config['mem_limit'] = max_memory
+                        modified = True
+                    # Also set memswap_limit equal to mem_limit to prevent swap usage
+                    service_config['memswap_limit'] = service_config.get('mem_limit', max_memory)
+                
+                # Enforce CPU limit
+                if max_cpu > 0:
+                    current_cpu = service_config.get('cpus')
+                    if current_cpu is None or float(current_cpu) > max_cpu:
+                        service_config['cpus'] = max_cpu
+                        modified = True
+                
+                # Enforce PID limit (fork bomb protection)
+                if pids_limit > 0:
+                    service_config['pids_limit'] = pids_limit
+                    modified = True
+            
+            if modified:
+                with open(compose_file, 'w') as f:
+                    yaml.dump(compose_data, f, default_flow_style=False)
+                print(f"Enforced resource limits for {challenge_id}: mem={max_memory}, cpu={max_cpu}, pids={pids_limit}")
+        
+        except Exception as e:
+            print(f"Warning: Failed to enforce resource limits: {e}")
+    
+    @staticmethod
+    def _parse_memory(mem_str: str) -> int:
+        """Parse memory string (e.g., '256m', '1g') to bytes."""
+        mem_str = str(mem_str).strip().lower()
+        multipliers = {'b': 1, 'k': 1024, 'm': 1024**2, 'g': 1024**3}
+        if mem_str[-1] in multipliers:
+            return int(float(mem_str[:-1]) * multipliers[mem_str[-1]])
+        return int(mem_str)
+
     async def _start_containers(
         self, 
         instance: Instance, 
@@ -475,12 +590,15 @@ class DockerManager:
         """Start Docker containers for an instance using docker-compose."""
         
         # Determine working directory and compose file path
-        # If dynamic flag is provided, we need to copy the challenge to avoid race conditions
+        # Always create a temp copy to inject resource limits and/or flags
         work_dir = challenge.path
         compose_file = challenge.compose_file
         temp_dir = None
         
-        if dynamic_flag:
+        # Check if we need a temp copy (for flag injection or resource limits)
+        needs_temp = dynamic_flag or settings.CONTAINER_MAX_MEMORY or settings.CONTAINER_MAX_CPU or settings.CONTAINER_PIDS_LIMIT
+        
+        if needs_temp:
             try:
                 # Create a temporary copy of the challenge directory to prevent race conditions
                 # when multiple users spawn the same challenge simultaneously
@@ -492,16 +610,21 @@ class DockerManager:
                 work_dir = temp_path / "challenge"
                 compose_file = work_dir / challenge.compose_file.name
                 
-                # Inject flag into the copied files (not the original)
-                count = self._inject_flag_into_files(
-                    work_dir,
-                    dynamic_flag,
-                    settings.FLAG_PREFIX
-                )
-                if count > 0:
-                    print(f"Injected flag into {count} files for {instance.instance_id}")
+                # Inject dynamic flag if provided
+                if dynamic_flag:
+                    count = self._inject_flag_into_files(
+                        work_dir,
+                        dynamic_flag,
+                        settings.FLAG_PREFIX
+                    )
+                    if count > 0:
+                        print(f"Injected flag into {count} files for {instance.instance_id}")
+                
+                # Enforce resource limits into compose file
+                self._enforce_resource_limits(compose_file, instance.challenge_id)
+                
             except Exception as e:
-                print(f"Flag injection error: {e}")
+                print(f"Temp dir setup error: {e}")
                 # Cleanup temp dir on error
                 if temp_dir:
                     shutil.rmtree(temp_dir, ignore_errors=True)
