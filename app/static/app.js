@@ -121,6 +121,10 @@ function logout() {
     
     // Clear token input
     document.getElementById('ctfd-token').value = '';
+    const adminLink = document.getElementById('admin-panel-link');
+    if (adminLink) {
+        adminLink.classList.add('hidden');
+    }
     
     showToast('Logged out successfully', 'info');
     showAuthForm();
@@ -184,6 +188,11 @@ async function loadUserInfo() {
         document.getElementById('user-id').textContent = currentUser.user_id;
         document.getElementById('user-instances').textContent = 
             `${data.instances} / ${data.max_instances}`;
+
+        const adminLink = document.getElementById('admin-panel-link');
+        if (adminLink) {
+            adminLink.classList.toggle('hidden', !currentUser.is_admin);
+        }
         
         // Display team info if in team mode
         const teamNameItem = document.getElementById('team-name-item');
@@ -278,7 +287,7 @@ async function loadChallenges() {
         }
         
         container.innerHTML = challenges.map(challenge => `
-            <div class="challenge-card" data-id="${challenge.id}">
+            <div class="challenge-card" data-id="${escapeHtml(challenge.id)}">
                 <div class="challenge-header">
                     <span class="challenge-name">${escapeHtml(challenge.name)}</span>
                     <span class="challenge-category category-${challenge.category}">${challenge.category}</span>
@@ -288,7 +297,7 @@ async function loadChallenges() {
                     <span>🔌 ${challenge.ports.length} port${challenge.ports.length !== 1 ? 's' : ''}</span>
                 </div>
                 <div class="challenge-actions">
-                    <button class="btn btn-primary" onclick="spawnInstance('${challenge.id}')">
+                    <button class="btn btn-primary" onclick="spawnInstance(${jsArg(challenge.id)})">
                         <span class="btn-icon">🚀</span> Spawn
                     </button>
                 </div>
@@ -344,16 +353,16 @@ async function loadInstances() {
                 // Multi-port display with labels
                 portsHtml = Object.entries(publicUrls)
                     .map(([internalPort, url]) => `
-                        <span class="instance-url" onclick="copyToClipboard('${url}')" title="Port ${internalPort} - Click to copy">
-                            <span class="port-label">:${internalPort}</span> ${url}
+                        <span class="instance-url" onclick="copyToClipboard(${jsArg(url)})" title="Port ${escapeHtml(internalPort)} - Click to copy">
+                            <span class="port-label">:${escapeHtml(internalPort)}</span> ${escapeHtml(url)}
                         </span>
                     `).join('');
             } else {
                 // Fallback to single URL
                 const url = instance.public_url || 'N/A';
                 portsHtml = `
-                    <span class="instance-url" onclick="copyToClipboard('${url}')" title="Click to copy">
-                        ${url}
+                    <span class="instance-url" onclick="copyToClipboard(${jsArg(url)})" title="Click to copy">
+                        ${escapeHtml(url)}
                     </span>
                 `;
             }
@@ -371,7 +380,7 @@ async function loadInstances() {
                 `<span class="spawned-by">(spawned by ${escapeHtml(instance.username)})</span>` : '';
             
             return `
-                <div class="instance-card ${instance.status === 'error' ? 'instance-error-card' : ''}" data-id="${instance.instance_id}">
+                <div class="instance-card ${instance.status === 'error' ? 'instance-error-card' : ''}" data-id="${escapeHtml(instance.instance_id)}">
                     <div class="instance-info">
                         <div class="instance-header">
                             <span class="instance-name">${escapeHtml(instance.challenge_id)}</span>
@@ -395,10 +404,10 @@ async function loadInstances() {
                         </div>
                     </div>
                     <div class="instance-actions">
-                        <button class="btn btn-warning btn-sm" onclick="extendInstance('${instance.instance_id}')" title="Extend 30 min">
+                        <button class="btn btn-warning btn-sm" onclick="extendInstance(${jsArg(instance.instance_id)})" title="Extend 30 min">
                             <span class="btn-icon">⏰</span> Extend
                         </button>
-                        <button class="btn btn-danger btn-sm" onclick="stopInstance('${instance.instance_id}')">
+                        <button class="btn btn-danger btn-sm" onclick="stopInstance(${jsArg(instance.instance_id)})">
                             <span class="btn-icon">🛑</span> Stop
                         </button>
                     </div>
@@ -460,7 +469,7 @@ async function stopInstance(instanceId) {
     }
     
     try {
-        await api(`/instances/${instanceId}`, {
+        await api(`/instances/${encodeURIComponent(instanceId)}`, {
             method: 'DELETE'
         });
         
@@ -475,7 +484,7 @@ async function stopInstance(instanceId) {
 // Extend Instance
 async function extendInstance(instanceId) {
     try {
-        const data = await api(`/instances/${instanceId}/extend`, {
+        const data = await api(`/instances/${encodeURIComponent(instanceId)}/extend`, {
             method: 'POST'
         });
         
@@ -580,6 +589,15 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function jsArg(value) {
+    return JSON.stringify(String(value))
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e')
+        .replace(/&/g, '\\u0026')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
 }
 
 function copyToClipboard(text) {

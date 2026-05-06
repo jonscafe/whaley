@@ -1,10 +1,11 @@
 """Docker container management for challenge instances."""
 import os
+import re
 import shutil
 import yaml
 import tempfile
 import asyncio
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 import uuid
@@ -18,6 +19,12 @@ from .flag_manager import get_flag_manager
 from .forensics import get_forensics_manager
 from .distributed_lock import get_lock_manager
 from .docker_client import get_docker_client, DockerError
+
+
+def safe_docker_name(value: str, fallback: str = "item", max_length: int = 48) -> str:
+    """Convert arbitrary IDs to Docker compose/network safe name fragments."""
+    cleaned = re.sub(r"[^a-z0-9_-]+", "-", str(value).lower()).strip("-_")
+    return (cleaned or fallback)[:max_length].strip("-_") or fallback
 
 
 class ChallengeConfig:
@@ -143,7 +150,7 @@ class DockerManager:
         self.challenges.clear()
         
         for item in challenges_path.iterdir():
-            if item.is_dir():
+            if item.is_dir() and not item.is_symlink():
                 config_file = item / "challenge.yaml"
                 # Support both .yaml and .yml extensions
                 compose_yaml = item / "docker-compose.yaml"
@@ -296,11 +303,18 @@ class DockerManager:
                         else:
                             return False, "You already have this challenge running", None
                 
-                # Continue with spawn logic (now protected by lock)
-                return await self._do_spawn_instance(
-                    challenge_id, user_id, username, challenge,
-                    user_info=user_info, team_mode=team_mode
-                )
+                # Keep allocation through container startup serialized across workers.
+                # Docker binds ports during compose up, so releasing this lock earlier
+                # can let another worker pick the same still-unbound port.
+                async with self._lock_manager.acquire(
+                    "port:allocation",
+                    timeout=900,
+                    blocking_timeout=120
+                ):
+                    return await self._do_spawn_instance(
+                        challenge_id, user_id, username, challenge,
+                        user_info=user_info, team_mode=team_mode
+                    )
     
     async def _do_spawn_instance(
         self,
@@ -321,8 +335,10 @@ class DockerManager:
             owner_id = user_id
             owner_name = username or user_id
         
-        # Generate instance ID
-        instance_id = f"{challenge_id}-{owner_id[:8]}-{uuid.uuid4().hex[:8]}"
+        # Generate Docker-safe instance/project ID.
+        challenge_slug = safe_docker_name(challenge_id, "challenge")
+        owner_slug = safe_docker_name(owner_id, "owner", max_length=16)
+        instance_id = f"{challenge_slug}-{owner_slug}-{uuid.uuid4().hex[:8]}"
         
         # Allocate ports (tries to reuse saved ports for this owner+challenge)
         port_mapping = await self.port_manager.allocate_ports_for_user(
@@ -421,6 +437,8 @@ class DockerManager:
                     await self.docker.remove_network(network_name, force=True)
                 except Exception:
                     pass
+
+            self._cleanup_instance_temp_dir(instance)
             
             # Clean up instance from memory
             del self.instances[instance_id]
@@ -515,7 +533,8 @@ class DockerManager:
     def _enforce_resource_limits(
         self,
         compose_file: Path,
-        challenge_id: str
+        challenge_id: str,
+        network_name: Optional[str] = None
     ) -> None:
         """
         Enforce maximum resource limits into a docker-compose file.
@@ -539,9 +558,13 @@ class DockerManager:
             pids_limit = settings.CONTAINER_PIDS_LIMIT
             
             modified = False
+            self._validate_compose_security(compose_data)
+
             for service_name, service_config in compose_data.get('services', {}).items():
                 if not isinstance(service_config, dict):
                     continue
+
+                self._validate_service_security(service_name, service_config)
                 
                 # Enforce memory limit
                 if max_memory:
@@ -563,14 +586,187 @@ class DockerManager:
                 if pids_limit > 0:
                     service_config['pids_limit'] = pids_limit
                     modified = True
+
+                if network_name:
+                    self._attach_service_network(service_config)
+                    modified = True
+
+            if network_name:
+                networks = compose_data.setdefault('networks', {})
+                networks['whaley_instance'] = {
+                    'external': True,
+                    'name': network_name
+                }
+                modified = True
             
             if modified:
                 with open(compose_file, 'w') as f:
                     yaml.dump(compose_data, f, default_flow_style=False)
-                print(f"Enforced resource limits for {challenge_id}: mem={max_memory}, cpu={max_cpu}, pids={pids_limit}")
+                print(f"Prepared compose for {challenge_id}: mem={max_memory}, cpu={max_cpu}, pids={pids_limit}, network={network_name or 'default'}")
         
         except Exception as e:
-            print(f"Warning: Failed to enforce resource limits: {e}")
+            print(f"Warning: Failed to prepare compose file: {e}")
+            raise
+
+    @staticmethod
+    def _validate_local_path_reference(owner: str, field_name: str, value: str, *, reject_urls: bool = False) -> None:
+        """Reject local path references that escape the challenge directory."""
+        path_value = str(value or "").strip()
+        if not path_value:
+            return
+
+        if reject_urls and "://" in path_value:
+            raise ValueError(f"{owner} cannot use remote URL in {field_name}")
+
+        if "${" in path_value or path_value.startswith("$"):
+            raise ValueError(f"{owner} cannot use environment-expanded path in {field_name}: {path_value}")
+
+        if path_value.startswith("~"):
+            raise ValueError(f"{owner} cannot use home-directory path in {field_name}: {path_value}")
+
+        normalized = path_value.replace("\\", "/")
+        if Path(normalized).is_absolute() or PureWindowsPath(path_value).is_absolute():
+            raise ValueError(f"{owner} cannot use absolute path in {field_name}: {path_value}")
+
+        if ".." in Path(normalized).parts or ".." in PureWindowsPath(path_value).parts:
+            raise ValueError(f"{owner} cannot use parent-directory path in {field_name}: {path_value}")
+
+    @classmethod
+    def _validate_compose_security(cls, compose_data: Dict) -> None:
+        """Reject top-level compose resources that can attach host or external state."""
+        networks = compose_data.get('networks') or {}
+        if networks and not isinstance(networks, dict):
+            raise ValueError("Top-level networks must be a mapping")
+        if isinstance(networks, dict):
+            for network_name, network_config in networks.items():
+                if isinstance(network_config, dict) and network_config.get('external'):
+                    raise ValueError(f"Network '{network_name}' cannot be external")
+
+        volumes = compose_data.get('volumes') or {}
+        if volumes and not isinstance(volumes, dict):
+            raise ValueError("Top-level volumes must be a mapping")
+        if isinstance(volumes, dict):
+            for volume_name, volume_config in volumes.items():
+                if not isinstance(volume_config, dict):
+                    continue
+                if volume_config.get('external'):
+                    raise ValueError(f"Volume '{volume_name}' cannot be external")
+                if volume_config.get('driver_opts'):
+                    raise ValueError(f"Volume '{volume_name}' cannot use driver_opts")
+                driver = volume_config.get('driver')
+                if driver and driver != 'local':
+                    raise ValueError(f"Volume '{volume_name}' cannot use driver '{driver}'")
+
+        for section_name in ('secrets', 'configs'):
+            section = compose_data.get(section_name) or {}
+            if not isinstance(section, dict):
+                raise ValueError(f"Top-level {section_name} must be a mapping")
+            for item_name, item_config in section.items():
+                if not isinstance(item_config, dict):
+                    continue
+                if item_config.get('external'):
+                    raise ValueError(f"{section_name[:-1].title()} '{item_name}' cannot be external")
+                if item_config.get('file'):
+                    cls._validate_local_path_reference(
+                        f"{section_name[:-1].title()} '{item_name}'",
+                        'file',
+                        item_config.get('file')
+                    )
+
+    @staticmethod
+    def _validate_service_security(service_name: str, service_config: Dict) -> None:
+        """Reject compose options that would let challenge containers escape isolation."""
+        if str(service_config.get('privileged', '')).strip().lower() == 'true':
+            raise ValueError(f"Service '{service_name}' cannot run in privileged mode")
+
+        for key in ('volumes_from', 'devices', 'device_cgroup_rules', 'cap_add', 'security_opt'):
+            if service_config.get(key):
+                raise ValueError(f"Service '{service_name}' cannot use {key}")
+
+        for key in ('network_mode', 'pid', 'ipc', 'userns_mode', 'cgroupns_mode', 'uts'):
+            value = service_config.get(key)
+            if value is not None:
+                normalized = str(value).strip().lower()
+                if key == 'network_mode':
+                    raise ValueError(f"Service '{service_name}' cannot override network_mode")
+                if normalized == 'host' or normalized.startswith('container:'):
+                    raise ValueError(f"Service '{service_name}' cannot use {key}={value}")
+
+        build = service_config.get('build')
+        if isinstance(build, str):
+            DockerManager._validate_local_path_reference(
+                f"Service '{service_name}'",
+                'build',
+                build,
+                reject_urls=True
+            )
+        elif isinstance(build, dict):
+            for key in ('context', 'dockerfile'):
+                if build.get(key):
+                    DockerManager._validate_local_path_reference(
+                        f"Service '{service_name}'",
+                        f'build.{key}',
+                        build.get(key),
+                        reject_urls=True
+                    )
+
+        env_file = service_config.get('env_file')
+        env_files = env_file if isinstance(env_file, list) else [env_file] if env_file else []
+        for entry in env_files:
+            if isinstance(entry, dict):
+                entry = entry.get('path')
+            DockerManager._validate_local_path_reference(
+                f"Service '{service_name}'",
+                'env_file',
+                entry
+            )
+
+        volumes = service_config.get('volumes') or []
+        for volume in volumes:
+            source = ""
+            is_bind_mount = False
+            if isinstance(volume, str):
+                if re.match(r"^[A-Za-z]:[\\/]", volume):
+                    raise ValueError(f"Service '{service_name}' cannot bind-mount Windows host path '{volume}'")
+                parts = volume.split(":", 1)
+                if len(parts) > 1:
+                    source = parts[0]
+                    is_bind_mount = True
+            elif isinstance(volume, dict):
+                source = str(volume.get("source") or volume.get("src") or "")
+                is_bind_mount = volume.get("type") == "bind" or source.startswith("/")
+
+            if source in {"/var/run/docker.sock", "/var/run/docker.sock/"}:
+                raise ValueError(f"Service '{service_name}' cannot mount the Docker socket")
+
+            if is_bind_mount and source.startswith("/"):
+                raise ValueError(f"Service '{service_name}' cannot bind-mount host path '{source}'")
+
+            if is_bind_mount and ("${" in source or source.startswith("$")):
+                raise ValueError(f"Service '{service_name}' cannot use environment-expanded bind mount source '{source}'")
+
+            if is_bind_mount and source.startswith("~"):
+                raise ValueError(f"Service '{service_name}' cannot bind-mount home-directory path '{source}'")
+
+            if is_bind_mount and ".." in Path(source.replace("\\", "/")).parts:
+                raise ValueError(f"Service '{service_name}' cannot bind-mount paths outside the challenge directory")
+
+            if is_bind_mount and PureWindowsPath(source).is_absolute():
+                raise ValueError(f"Service '{service_name}' cannot bind-mount Windows host path '{source}'")
+
+    @staticmethod
+    def _attach_service_network(service_config: Dict) -> None:
+        """Attach a service to the per-instance network while preserving existing networks."""
+        existing = service_config.get('networks')
+        if existing is None:
+            service_config['networks'] = ['whaley_instance']
+        elif isinstance(existing, list):
+            if 'whaley_instance' not in existing:
+                existing.append('whaley_instance')
+        elif isinstance(existing, dict):
+            existing.setdefault('whaley_instance', {})
+        else:
+            service_config['networks'] = ['whaley_instance']
     
     @staticmethod
     def _parse_memory(mem_str: str) -> int:
@@ -580,6 +776,20 @@ class DockerManager:
         if mem_str[-1] in multipliers:
             return int(float(mem_str[:-1]) * multipliers[mem_str[-1]])
         return int(mem_str)
+
+    def _cleanup_instance_temp_dir(self, instance: Instance) -> None:
+        """Remove the per-instance temp directory, if one was created."""
+        temp_dir = getattr(instance, "temp_dir", None)
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            instance.temp_dir = None
+
+    @staticmethod
+    def _validate_challenge_tree(challenge_path: Path) -> None:
+        """Reject symlinks in challenge source trees before copying/building."""
+        for item in challenge_path.rglob("*"):
+            if item.is_symlink():
+                raise ValueError(f"Challenge contains unsupported symlink: {item.relative_to(challenge_path)}")
 
     async def _start_containers(
         self, 
@@ -594,9 +804,27 @@ class DockerManager:
         work_dir = challenge.path
         compose_file = challenge.compose_file
         temp_dir = None
+
+        self._validate_challenge_tree(challenge.path)
+
+        # Create isolated network before writing compose, so the compose file only
+        # references an external network that actually exists.
+        network_name = getattr(instance, 'network_name', None)
+        if settings.NETWORK_ISOLATION_ENABLED and network_name:
+            try:
+                await self.docker.create_isolated_network(
+                    network_name=network_name,
+                    enable_icc=not settings.NETWORK_ICC_DISABLED
+                )
+                print(f"Created isolated network: {network_name}")
+            except DockerError as e:
+                print(f"Warning: Failed to create isolated network: {e}")
+                network_name = None
+                instance.network_name = None
         
-        # Check if we need a temp copy (for flag injection or resource limits)
-        needs_temp = dynamic_flag or settings.CONTAINER_MAX_MEMORY or settings.CONTAINER_MAX_CPU or settings.CONTAINER_PIDS_LIMIT
+        # Always run from a per-instance copy so resource/security rewrites and
+        # bind-mounted challenge files remain stable until the instance stops.
+        needs_temp = True
         
         if needs_temp:
             try:
@@ -620,8 +848,12 @@ class DockerManager:
                     if count > 0:
                         print(f"Injected flag into {count} files for {instance.instance_id}")
                 
-                # Enforce resource limits into compose file
-                self._enforce_resource_limits(compose_file, instance.challenge_id)
+                # Enforce resource limits and attach the per-instance network.
+                self._enforce_resource_limits(
+                    compose_file,
+                    instance.challenge_id,
+                    network_name=network_name
+                )
                 
             except Exception as e:
                 print(f"Temp dir setup error: {e}")
@@ -629,20 +861,10 @@ class DockerManager:
                 if temp_dir:
                     shutil.rmtree(temp_dir, ignore_errors=True)
                 raise
-        
-        # Create isolated network if enabled
-        network_name = getattr(instance, 'network_name', None)
-        if settings.NETWORK_ISOLATION_ENABLED and network_name:
-            try:
-                await self.docker.create_isolated_network(
-                    network_name=network_name,
-                    enable_icc=not settings.NETWORK_ICC_DISABLED
-                )
-                print(f"Created isolated network: {network_name}")
-            except DockerError as e:
-                print(f"Warning: Failed to create isolated network: {e}")
-                # Continue with default network
-                network_name = None
+
+        instance.work_dir = str(work_dir)
+        instance.compose_file = str(compose_file)
+        instance.temp_dir = temp_dir
         
         # Build environment with port mappings
         env = os.environ.copy()
@@ -660,31 +882,25 @@ class DockerManager:
         if network_name:
             env["DOCKER_NETWORK"] = network_name
         
-        try:
-            # Use Docker SDK for compose operations
-            container_ids, output = await self.docker.compose_up(
-                project_name=instance.instance_id,
-                compose_file=compose_file,
-                work_dir=work_dir,
-                environment=env,
-                network_name=network_name or settings.DOCKER_NETWORK,
-                build=True
-            )
-            
-            instance.container_ids = container_ids
-            
-        finally:
-            # Clean up temporary directory after build completes
-            # The image is built, so we don't need the temp files anymore
-            if temp_dir:
-                shutil.rmtree(temp_dir, ignore_errors=True)
+        # Use Docker SDK for compose operations
+        container_ids, output = await self.docker.compose_up(
+            project_name=instance.instance_id,
+            compose_file=compose_file,
+            work_dir=work_dir,
+            environment=env,
+            network_name=network_name or settings.DOCKER_NETWORK,
+            build=True
+        )
+
+        instance.container_ids = container_ids
     
     async def stop_instance(
         self, 
         instance_id: str, 
         user_id: Optional[str] = None,
         team_id: Optional[str] = None,
-        team_mode: bool = False
+        team_mode: bool = False,
+        terminate_reason: str = "user_stop"
     ) -> Tuple[bool, str]:
         """
         Stop and remove a challenge instance.
@@ -707,8 +923,7 @@ class DockerManager:
                 return False, "You don't own this instance"
         
         challenge = self.get_challenge(instance.challenge_id)
-        if not challenge:
-            return False, "Challenge configuration not found"
+        challenge_name = challenge.name if challenge else instance.challenge_id
         
         instance.status = InstanceStatus.STOPPING
         
@@ -720,11 +935,11 @@ class DockerManager:
                     instance_id=instance.instance_id,
                     project_name=instance.instance_id,
                     challenge_id=instance.challenge_id,
-                    challenge_name=challenge.name,
+                    challenge_name=challenge_name,
                     owner_id=instance.owner_id or instance.user_id,
                     owner_name=instance.team_name or instance.username,
                     spawned_by=instance.username,
-                    terminate_reason="user_stop",
+                    terminate_reason=terminate_reason,
                     team_id=instance.team_id,
                     team_name=instance.team_name,
                     capture_type="auto"
@@ -733,14 +948,24 @@ class DockerManager:
             print(f"[Forensics] Auto capture failed for {instance.instance_id}: {e}")
         
         try:
-            # Use Docker SDK for compose down
-            await self.docker.compose_down(
-                project_name=instance.instance_id,
-                compose_file=challenge.compose_file,
-                work_dir=challenge.path,
-                remove_volumes=True,
-                remove_orphans=True
-            )
+            compose_file = Path(instance.compose_file) if instance.compose_file else None
+            work_dir = Path(instance.work_dir) if instance.work_dir else None
+
+            if compose_file and work_dir and compose_file.exists() and work_dir.exists():
+                # Use Docker SDK for compose down
+                await self.docker.compose_down(
+                    project_name=instance.instance_id,
+                    compose_file=compose_file,
+                    work_dir=work_dir,
+                    remove_volumes=True,
+                    remove_orphans=True
+                )
+            else:
+                # Fall back to removing containers by compose project label. This
+                # keeps instances stoppable even if the challenge config was deleted.
+                containers = await self.docker.list_containers_by_project(instance.instance_id)
+                for container in containers:
+                    await self.docker.remove_container(container["id"], force=True, v=True)
             
             # Remove isolated network if created
             network_name = getattr(instance, 'network_name', None)
@@ -757,6 +982,7 @@ class DockerManager:
             # Remove from tracking
             instance.status = InstanceStatus.STOPPED
             del self.instances[instance_id]
+            self._cleanup_instance_temp_dir(instance)
             
             return True, "Instance stopped successfully"
             
@@ -802,30 +1028,7 @@ class DockerManager:
         
         for instance in expired:
             print(f"Cleaning up expired instance: {instance.instance_id}")
-            
-            # Capture logs before cleanup (Instance Forensics)
-            try:
-                forensics = get_forensics_manager()
-                if forensics.auto_capture_enabled:
-                    challenge = self.get_challenge(instance.challenge_id)
-                    if challenge:
-                        await forensics.capture_instance_logs(
-                            instance_id=instance.instance_id,
-                            project_name=instance.instance_id,
-                            challenge_id=instance.challenge_id,
-                            challenge_name=challenge.name,
-                            owner_id=instance.owner_id or instance.user_id,
-                            owner_name=instance.team_name or instance.username,
-                            spawned_by=instance.username,
-                            terminate_reason="expired",
-                            team_id=instance.team_id,
-                            team_name=instance.team_name,
-                            capture_type="auto"
-                        )
-            except Exception as e:
-                print(f"[Forensics] Auto capture failed for expired {instance.instance_id}: {e}")
-            
-            await self.stop_instance(instance.instance_id)
+            await self.stop_instance(instance.instance_id, terminate_reason="expired")
     
     async def start_cleanup_task(self) -> None:
         """Start the background cleanup task."""

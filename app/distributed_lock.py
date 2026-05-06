@@ -2,7 +2,7 @@
 import asyncio
 import os
 from typing import Optional, Dict
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AsyncExitStack
 
 try:
     import redis.asyncio as aioredis
@@ -140,17 +140,11 @@ class DistributedLockManager:
         """
         # Sort to prevent deadlocks
         sorted_names = sorted(lock_names)
-        acquired_locks = []
-        
-        try:
+
+        async with AsyncExitStack() as stack:
             for name in sorted_names:
-                async with self.acquire(name, timeout, blocking_timeout):
-                    acquired_locks.append(name)
-                    if len(acquired_locks) == len(sorted_names):
-                        yield
-        except Exception:
-            # Locks are automatically released by context managers
-            raise
+                await stack.enter_async_context(self.acquire(name, timeout, blocking_timeout))
+            yield
     
     @property
     def is_distributed(self) -> bool:

@@ -955,13 +955,13 @@
         <!-- Admin Auth Section -->
         <section class="card auth-card" id="admin-auth-section">
             <div class="card-header">
-                <h2>🔐 Admin Authentication</h2>
+                <h2 id="admin-auth-title">🔐 Admin Authentication</h2>
             </div>
             <div class="card-body">
-                <p class="auth-description">Enter the admin secret key to access the dashboard.</p>
+                <p class="auth-description" id="admin-auth-description">Enter your CTFd access token to access the dashboard.</p>
                 <div class="auth-form">
                     <div class="input-group">
-                        <label for="admin-key">Admin Secret Key</label>
+                        <label for="admin-key" id="admin-key-label">CTFd Access Token</label>
                         <input type="password" id="admin-key" placeholder="Enter admin key..." autocomplete="off"
                             onkeypress="if(event.key==='Enter')adminLogin()">
                     </div>
@@ -1672,6 +1672,8 @@
 
     <script>
         let adminKey = null;
+        let adminAuthMode = 'ctfd';
+        let adminRefreshInterval = null;
         let currentPage = 0;
         let currentTab = 'dashboard';
         let debounceTimer = null;
@@ -1680,17 +1682,17 @@
         let unsavedChanges = false;
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            adminKey = localStorage.getItem('admin_key');
-
+        document.addEventListener('DOMContentLoaded', async () => {
             // Check URL hash for page
             const hash = window.location.hash.replace('#', '');
             if (['dashboard', 'logs', 'challenges', 'flags', 'monitoring', 'settings'].includes(hash)) {
                 currentTab = hash;
             }
 
+            await checkAdminAuthMode();
+            adminKey = getStoredAdminCredential();
             if (adminKey) {
-                verifyAdminKey();
+                await verifyAdminKey();
             }
 
             // Setup drag and drop for upload zone
@@ -1713,6 +1715,91 @@
                 }
             });
         });
+
+        async function checkAdminAuthMode() {
+            try {
+                const data = await fetch('/api').then(r => r.json());
+                adminAuthMode = data.auth_mode || 'none';
+            } catch (error) {
+                adminAuthMode = 'ctfd';
+            }
+            updateAdminAuthCopy();
+        }
+
+        function updateAdminAuthCopy() {
+            const isCtfd = adminAuthMode === 'ctfd';
+            document.getElementById('admin-auth-title').textContent = isCtfd ? '🔐 CTFd Admin Login' : '🔐 Admin Authentication';
+            document.getElementById('admin-auth-description').textContent = isCtfd
+                ? 'Use a CTFd access token from an admin user. Whaley checks your CTFd role before enabling the panel.'
+                : 'Enter the local admin secret key to access the dashboard.';
+            document.getElementById('admin-key-label').textContent = isCtfd ? 'CTFd Access Token' : 'Admin Secret Key';
+            document.getElementById('admin-key').placeholder = isCtfd ? 'ctfd_xxxxxxxxxxxx...' : 'Enter admin key...';
+        }
+
+        function getStoredAdminCredential() {
+            if (adminAuthMode === 'ctfd') {
+                const rejected = sessionStorage.getItem('admin_ctfd_rejected');
+                const adminToken = sessionStorage.getItem('admin_ctfd_token');
+                const userToken = sessionStorage.getItem('ctfd_token');
+                if (adminToken && adminToken !== rejected) return adminToken;
+                if (userToken && userToken !== rejected) return userToken;
+                return null;
+            }
+            return sessionStorage.getItem('admin_key');
+        }
+
+        function storeAdminCredential(value) {
+            if (adminAuthMode === 'ctfd') {
+                sessionStorage.removeItem('admin_ctfd_rejected');
+                sessionStorage.setItem('admin_ctfd_token', value);
+                sessionStorage.setItem('ctfd_token', value);
+            } else {
+                sessionStorage.setItem('admin_key', value);
+            }
+        }
+
+        function clearAdminCredential() {
+            if (adminAuthMode === 'ctfd') {
+                if (adminKey) {
+                    sessionStorage.setItem('admin_ctfd_rejected', adminKey);
+                }
+                sessionStorage.removeItem('admin_ctfd_token');
+            }
+            if (adminAuthMode !== 'ctfd') {
+                sessionStorage.removeItem('admin_key');
+            }
+        }
+
+        function adminHeaders(extra = {}) {
+            const headers = { ...extra };
+            if (adminAuthMode === 'ctfd') {
+                headers['Authorization'] = `Bearer ${adminKey}`;
+            } else {
+                headers['X-Admin-Key'] = adminKey;
+            }
+            return headers;
+        }
+
+        function jsArg(value) {
+            return JSON.stringify(String(value))
+                .replace(/</g, '\\u003c')
+                .replace(/>/g, '\\u003e')
+                .replace(/&/g, '\\u0026')
+                .replace(/\u2028/g, '\\u2028')
+                .replace(/\u2029/g, '\\u2029');
+        }
+
+        function encodePathParts(path) {
+            return String(path).split('/').map(encodeURIComponent).join('/');
+        }
+
+        function adminChallengeBase(challengeId) {
+            return `/admin/api/challenges/${encodeURIComponent(challengeId)}`;
+        }
+
+        function adminChallengeFileUrl(challengeId, filePath) {
+            return `${adminChallengeBase(challengeId)}/files/${encodePathParts(filePath)}`;
+        }
 
         function switchPage(page) {
             if (unsavedChanges && !confirm('You have unsaved changes. Discard them?')) {
@@ -1764,7 +1851,7 @@
             const key = keyInput.value.trim();
 
             if (!key) {
-                showToast('Please enter admin key', 'error');
+                showToast(adminAuthMode === 'ctfd' ? 'Please enter a CTFd access token' : 'Please enter admin key', 'error');
                 return;
             }
 
@@ -1774,28 +1861,30 @@
 
         async function verifyAdminKey() {
             try {
-                const response = await fetch('/admin/api/stats', {
-                    headers: {
-                        'X-Admin-Key': adminKey
-                    }
+                const response = await fetch('/admin/api/me', {
+                    headers: adminHeaders()
                 });
 
                 if (response.ok) {
-                    localStorage.setItem('admin_key', adminKey);
+                    storeAdminCredential(adminKey);
                     showAdminContent();
 
                     // Switch to saved tab and load data
                     switchPage(currentTab);
 
                     // Auto-refresh current page every 30 seconds
-                    setInterval(() => loadPageData(currentTab), 30000);
+                    if (!adminRefreshInterval) {
+                        adminRefreshInterval = setInterval(() => loadPageData(currentTab), 30000);
+                    }
                 } else {
+                    const data = await response.json().catch(() => ({}));
+                    const message = data.detail || (adminAuthMode === 'ctfd' ? 'CTFd admin role required' : 'Invalid admin key');
+                    clearAdminCredential();
                     adminKey = null;
-                    localStorage.removeItem('admin_key');
-                    showToast('Invalid admin key', 'error');
+                    showToast(message, 'error');
                 }
             } catch (error) {
-                showToast('Failed to verify admin key', 'error');
+                showToast('Failed to verify admin access', 'error');
             }
         }
 
@@ -1807,9 +1896,7 @@
         async function adminApi(endpoint, method = 'GET', body = null) {
             const options = {
                 method,
-                headers: {
-                    'X-Admin-Key': adminKey
-                }
+                headers: adminHeaders()
             };
 
             if (body) {
@@ -1820,7 +1907,8 @@
             const response = await fetch(endpoint, options);
 
             if (!response.ok) {
-                throw new Error('API Error');
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.detail || data.message || 'API Error');
             }
 
             return response.json();
@@ -1907,7 +1995,7 @@
                                 </div>
                             </div>
                             <div class="instance-actions">
-                                <button class="btn btn-danger btn-sm" onclick="adminStopInstance('${instance.instance_id}')">
+                                <button class="btn btn-danger btn-sm" onclick="adminStopInstance(${jsArg(instance.instance_id)})">
                                     🛑 Force Stop
                                 </button>
                             </div>
@@ -1924,11 +2012,9 @@
             if (!confirm(`Force stop instance ${instanceId}?`)) return;
 
             try {
-                await fetch(`/admin/api/instances/${instanceId}`, {
+                await fetch(`/admin/api/instances/${encodeURIComponent(instanceId)}`, {
                     method: 'DELETE',
-                    headers: {
-                        'X-Admin-Key': adminKey
-                    }
+                    headers: adminHeaders()
                 });
 
                 showToast('Instance stopped', 'success');
@@ -2249,7 +2335,7 @@
                             <td>${escapeHtml(challengeId)}</td>
                             <td>${portMappings}</td>
                             <td>
-                                <button class="btn btn-danger btn-sm" onclick="deleteUserPorts('${escapeHtml(userId)}', '${escapeHtml(challengeId)}')" title="Delete mapping">
+                                <button class="btn btn-danger btn-sm" onclick="deleteUserPorts(${jsArg(userId)}, ${jsArg(challengeId)})" title="Delete mapping">
                                     🗑️
                                 </button>
                             </td>
@@ -2277,7 +2363,7 @@
             try {
                 const response = await fetch(`/admin/api/user-ports/${encodeURIComponent(userId)}?challenge_id=${encodeURIComponent(challengeId)}`, {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
                 if (response.ok) {
                     showToast(`Deleted port mapping for ${userId}/${challengeId}`, 'success');
@@ -2299,7 +2385,7 @@
             try {
                 const response = await fetch('/admin/api/user-ports', {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
                 if (response.ok) {
                     const data = await response.json();
@@ -2474,10 +2560,10 @@
                     <td><span class="forensics-reason">${escapeHtml(log.terminate_reason)}</span></td>
                     <td>${sizeDisplay}</td>
                     <td>
-                        <button class="btn btn-secondary btn-sm" onclick="viewForensicsLog('${log.log_id}')" title="View Log">
+                        <button class="btn btn-secondary btn-sm" onclick="viewForensicsLog(${jsArg(log.log_id)})" title="View Log">
                             👁️
                         </button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteForensicsLog('${log.log_id}')" title="Delete">
+                        <button class="btn btn-danger btn-sm" onclick="deleteForensicsLog(${jsArg(log.log_id)})" title="Delete">
                             🗑️
                         </button>
                     </td>
@@ -2513,7 +2599,7 @@
             try {
                 const response = await fetch(`/admin/api/forensics/toggle?enabled=${enabled}`, {
                     method: 'POST',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (response.ok) {
@@ -2552,9 +2638,9 @@
             try {
                 showToast('Capturing logs...', 'info');
 
-                const response = await fetch(`/admin/api/forensics/live-capture/${instanceId}`, {
+                const response = await fetch(`/admin/api/forensics/live-capture/${encodeURIComponent(instanceId)}`, {
                     method: 'POST',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (response.ok) {
@@ -2574,7 +2660,7 @@
             try {
                 showToast('Loading log content...', 'info');
 
-                const data = await adminApi(`/admin/api/forensics/logs/${logId}`);
+                const data = await adminApi(`/admin/api/forensics/logs/${encodeURIComponent(logId)}`);
 
                 if (!data || !data.content) {
                     showToast('Log content is empty', 'error');
@@ -2600,7 +2686,7 @@
                         </div>
                         <div class="modal-footer">
                             <button class="btn btn-primary btn-sm" onclick="copyForensicsLog()">📋 Copy to Clipboard</button>
-                            <button class="btn btn-secondary btn-sm" onclick="downloadForensicsLog('${escapeHtml(logId)}')">💾 Download</button>
+                            <button class="btn btn-secondary btn-sm" onclick="downloadForensicsLog(${jsArg(logId)})">💾 Download</button>
                             <button class="btn btn-secondary btn-sm" onclick="closeForensicsModal()">Close</button>
                         </div>
                     </div>
@@ -2653,9 +2739,9 @@
             if (!confirm(`Delete forensics log "${logId}"?`)) return;
 
             try {
-                const response = await fetch(`/admin/api/forensics/logs/${logId}`, {
+                const response = await fetch(`/admin/api/forensics/logs/${encodeURIComponent(logId)}`, {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (response.ok) {
@@ -2675,7 +2761,7 @@
             try {
                 const response = await fetch('/admin/api/forensics/logs', {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (response.ok) {
@@ -2872,7 +2958,7 @@
                     </td>
                     <td class="log-time">${formatTime(m.created_at)}</td>
                     <td>
-                        <button class="btn btn-danger btn-sm" onclick="deleteFlagMapping(${m.flag_id}, '${escapeHtml(isTeamMode ? m.team_name : m.username)}')"
+                        <button class="btn btn-danger btn-sm" onclick="deleteFlagMapping(${m.flag_id}, ${jsArg(isTeamMode ? m.team_name : m.username)})"
                             title="Delete this flag from CTFd">
                             🗑️
                         </button>
@@ -2895,7 +2981,7 @@
             try {
                 const res = await fetch(`/admin/api/flags/${flagId}`, {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (!res.ok) {
@@ -2958,7 +3044,7 @@
                     </td>
                     <td>
                         ${item.isMapped
-                    ? `<button class="btn btn-danger btn-sm" onclick="removeChallengeMapping('${escapeHtml(item.localId)}')">🗑️</button>`
+                    ? `<button class="btn btn-danger btn-sm" onclick="removeChallengeMapping(${jsArg(item.localId)})">🗑️</button>`
                     : ''}
                     </td>
                 </tr>
@@ -2990,7 +3076,7 @@
 
                 const res = await fetch(`/admin/api/flags/sync-challenge?${params}`, {
                     method: 'POST',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (!res.ok) {
@@ -3012,7 +3098,7 @@
             try {
                 const res = await fetch(`/admin/api/flags/mapping/${encodeURIComponent(localId)}`, {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (!res.ok) {
@@ -3094,7 +3180,7 @@
                     </td>
                     <td>
                         ${item.isMapped
-                    ? `<button class="btn btn-danger btn-sm" onclick="removeChallengeMapping('${escapeHtml(item.localId)}')">🗑️</button>`
+                    ? `<button class="btn btn-danger btn-sm" onclick="removeChallengeMapping(${jsArg(item.localId)})">🗑️</button>`
                     : ''}
                     </td>
                 </tr>
@@ -3128,7 +3214,7 @@
             try {
                 await fetch('/admin/api/flags/suspicious', {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
                 showToast('Cleared suspicious submissions', 'success');
                 await loadFlagsData();
@@ -3266,11 +3352,11 @@
                                 <option value="">-- Select Local --</option>
                                 ${localOptions}
                             </select>
-                            <button class="btn btn-primary btn-sm" onclick="mapFromWizard(${c.id}, '${escapeHtml(c.name)}')">
+                            <button class="btn btn-primary btn-sm" onclick="mapFromWizard(${jsArg(c.id)}, ${jsArg(c.name)})">
                                 Map
                             </button>
                         ` : `
-                            <button class="btn btn-danger btn-sm" onclick="unmapFromWizard('${escapeHtml(c.mapped_local_id)}', ${c.id})">
+                            <button class="btn btn-danger btn-sm" onclick="unmapFromWizard(${jsArg(c.mapped_local_id)}, ${jsArg(c.id)})">
                                 Unmap
                             </button>
                         `}
@@ -3296,7 +3382,7 @@
 
                 const res = await fetch(`/admin/api/flags/sync-challenge?${params}`, {
                     method: 'POST',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (!res.ok) {
@@ -3320,7 +3406,7 @@
             try {
                 const res = await fetch(`/admin/api/flags/mapping/${encodeURIComponent(localId)}`, {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (!res.ok) {
@@ -3524,9 +3610,10 @@
                     const cs = challengeSettingsCache[ch.id] || {};
                     const isActive = cs.is_active !== false; // default active
                     const inactiveClass = isActive ? '' : 'inactive';
+                    const challengeArg = jsArg(ch.id);
 
                     return `
-                        <div class="challenge-admin-card ${selectedChallenge === ch.id ? 'selected' : ''} ${inactiveClass}" data-id="${ch.id}">
+                        <div class="challenge-admin-card ${selectedChallenge === ch.id ? 'selected' : ''} ${inactiveClass}" data-id="${escapeHtml(ch.id)}">
                             <div>
                                 <strong>${escapeHtml(ch.id)}</strong>
                                 <span style="margin-left: 10px; font-size: 0.8rem; color: ${statusColor}">
@@ -3536,16 +3623,16 @@
                             </div>
                             <div style="display: flex; gap: 8px; align-items: center;">
                                 <label class="toggle-switch" title="${isActive ? 'Active - Click to deactivate' : 'Inactive - Click to activate'}">
-                                    <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleChallenge('${ch.id}', this.checked)">
+                                    <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleChallenge(${challengeArg}, this.checked)">
                                     <span class="toggle-slider"></span>
                                 </label>
-                                <button class="btn btn-primary btn-sm" onclick="selectChallenge('${ch.id}')">
+                                <button class="btn btn-primary btn-sm" onclick="selectChallenge(${challengeArg})">
                                     📝 Edit Files
                                 </button>
-                                <button class="btn btn-secondary btn-sm" onclick="reloadChallenge('${ch.id}')">
+                                <button class="btn btn-secondary btn-sm" onclick="reloadChallenge(${challengeArg})">
                                     🔄 Reload
                                 </button>
-                                <button class="btn btn-danger btn-sm" onclick="deleteChallenge('${ch.id}')">
+                                <button class="btn btn-danger btn-sm" onclick="deleteChallenge(${challengeArg})">
                                     🗑️ Delete
                                 </button>
                             </div>
@@ -3578,9 +3665,7 @@
             try {
                 const response = await fetch('/admin/api/challenges/upload', {
                     method: 'POST',
-                    headers: {
-                        'X-Admin-Key': adminKey
-                    },
+                    headers: adminHeaders(),
                     body: formData
                 });
 
@@ -3605,9 +3690,9 @@
             if (!confirm(`Delete challenge "${challengeId}"? This cannot be undone!`)) return;
 
             try {
-                const response = await fetch(`/admin/api/challenges/${challengeId}`, {
+                const response = await fetch(adminChallengeBase(challengeId), {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (response.ok) {
@@ -3628,9 +3713,9 @@
 
         async function reloadChallenge(challengeId) {
             try {
-                const response = await fetch(`/admin/api/challenges/${challengeId}/reload`, {
+                const response = await fetch(`${adminChallengeBase(challengeId)}/reload`, {
                     method: 'POST',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
                 const data = await response.json();
                 showToast(data.message, data.success ? 'success' : 'error');
@@ -3689,7 +3774,7 @@
             const container = document.getElementById('file-tree');
 
             try {
-                const data = await adminApi(`/admin/api/challenges/${selectedChallenge}/files`);
+                const data = await adminApi(`${adminChallengeBase(selectedChallenge)}/files`);
                 container.innerHTML = renderFileTree(data.files);
             } catch (error) {
                 container.innerHTML = '<div class="empty-state">Failed to load files</div>';
@@ -3702,7 +3787,7 @@
                 const clickHandler = item.type === 'directory'
                     ? `onclick="toggleFolder(this)"`
                     : (item.editable
-                        ? `onclick="openFile('${escapeHtml(item.path)}')"`
+                        ? `onclick="openFile(${jsArg(item.path)})"`
                         : `onclick="showToast('Cannot edit binary file', 'error')"`);
 
                 let html = `
@@ -3749,7 +3834,7 @@
             }
 
             try {
-                const data = await adminApi(`/admin/api/challenges/${selectedChallenge}/files/${filePath}`);
+                const data = await adminApi(adminChallengeFileUrl(selectedChallenge, filePath));
                 selectedFile = filePath;
                 unsavedChanges = false;
 
@@ -3766,7 +3851,7 @@
                             <button class="btn btn-primary btn-sm" onclick="saveFile()">
                                 💾 Save
                             </button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteFile('${escapeHtml(filePath)}')">
+                            <button class="btn btn-danger btn-sm" onclick="deleteFile(${jsArg(filePath)})">
                                 🗑️ Delete
                             </button>
                         </div>
@@ -3785,12 +3870,9 @@
             const content = document.getElementById('file-content').value;
 
             try {
-                const response = await fetch(`/admin/api/challenges/${selectedChallenge}/files/${selectedFile}`, {
+                const response = await fetch(adminChallengeFileUrl(selectedChallenge, selectedFile), {
                     method: 'PUT',
-                    headers: {
-                        'X-Admin-Key': adminKey,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: adminHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ content })
                 });
 
@@ -3820,12 +3902,9 @@
             }
 
             try {
-                const response = await fetch(`/admin/api/challenges/${selectedChallenge}/files/${filePath}`, {
+                const response = await fetch(adminChallengeFileUrl(selectedChallenge, filePath), {
                     method: 'PUT',
-                    headers: {
-                        'X-Admin-Key': adminKey,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: adminHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ content: '' })
                 });
 
@@ -3847,9 +3926,9 @@
             if (!confirm(`Delete "${filePath}"?`)) return;
 
             try {
-                const response = await fetch(`/admin/api/challenges/${selectedChallenge}/files/${filePath}`, {
+                const response = await fetch(adminChallengeFileUrl(selectedChallenge, filePath), {
                     method: 'DELETE',
-                    headers: { 'X-Admin-Key': adminKey }
+                    headers: adminHeaders()
                 });
 
                 if (response.ok) {
@@ -3876,12 +3955,9 @@
 
         async function toggleChallenge(challengeId, isActive) {
             try {
-                const response = await fetch(`/admin/api/challenges/${challengeId}/toggle`, {
+                const response = await fetch(`${adminChallengeBase(challengeId)}/toggle`, {
                     method: 'POST',
-                    headers: {
-                        'X-Admin-Key': adminKey,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: adminHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ is_active: isActive })
                 });
 
@@ -3989,7 +4065,7 @@
                             <div class="setting-label">
                                 ${hasOverride ? '<span class="override-dot"></span>' : ''}
                                 ${escapeHtml(s.label)}
-                                ${hasOverride ? `<button class="setting-reset" onclick="resetSetting('${key}')" title="Reset to default">↩️</button>` : ''}
+                                ${hasOverride ? `<button class="setting-reset" onclick="resetSetting(${jsArg(key)})" title="Reset to default">↩️</button>` : ''}
                             </div>
                             <div class="setting-key">${key}</div>
                             ${inputHtml}

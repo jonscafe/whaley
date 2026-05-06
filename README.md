@@ -43,7 +43,7 @@
 - **Per-Challenge Resource Overrides** — Fine-tune limits per challenge from admin panel
 
 ### 🔐 Authentication & Security
-- **CTFd Integration** — Validate users via CTFd access tokens
+- **CTFd Integration** — Validate users and admin RBAC via CTFd access tokens
 - **No-Auth Mode** — IP-based identification for open events
 - **Network Isolation** — Each instance in its own Docker network
 - **Distributed Locking** — Redis-based locks for multi-worker safety
@@ -115,7 +115,7 @@ docker compose up -d
 # Authentication
 AUTH_MODE=ctfd                    # "ctfd" or "none"
 CTFD_URL=https://your-ctfd.com    # Your CTFd instance URL
-CTFD_API_KEY=ctfd_xxx...          # CTFd admin API key
+CTFD_API_KEY=ctfd_xxx...          # CTFd admin API key for dynamic flags/sync
 
 # Network
 PUBLIC_HOST=auto                  # VPS IP ("auto" for detection)
@@ -123,7 +123,7 @@ PORT_RANGE_START=20000
 PORT_RANGE_END=50000
 
 # Admin
-ADMIN_KEY=your-secure-key         # Admin dashboard access key
+ADMIN_KEY=your-secure-key         # Local admin key when AUTH_MODE=none
 
 # Dynamic Flags
 DYNAMIC_FLAGS_ENABLED=true
@@ -145,6 +145,7 @@ REDIS_URL=redis://redis:6379/0
 # Network Isolation (recommended)
 NETWORK_ISOLATION_ENABLED=true
 NETWORK_ICC_DISABLED=true
+TRUSTED_PROXIES=127.0.0.1,::1     # Only these proxies may set client IP headers
 
 # Resource Limits (enforced on all containers)
 CONTAINER_MAX_MEMORY=512m         # Max memory per container
@@ -153,6 +154,8 @@ CONTAINER_PIDS_LIMIT=256          # Max PIDs per container (fork bomb protection
 ```
 
 > 💡 **Tip**: Most settings (including Authentication & CTFd integration) can be configured instantly via the **Admin Panel → ⚙️ Settings** tab.
+
+> 🔐 **Admin access**: In `AUTH_MODE=ctfd`, Whaley validates the submitted CTFd access token against CTFd's `/api/v1/users/me` endpoint and only enables `/admin` for users whose CTFd user type is `admin`. In `AUTH_MODE=none`, admin APIs use the local `ADMIN_KEY` fallback.
 
 > 📖 **Full configuration guide**: See [DOCUMENTATION.md](DOCUMENTATION.md#configuration)
 
@@ -200,6 +203,8 @@ services:
 ```
 
 > ⚠️ **Resource enforcement**: Even if a challenge sets `mem_limit: 2g`, Whaley will cap it to the global `CONTAINER_MAX_MEMORY` (default `512m`). You can set per-challenge overrides via the admin panel.
+
+> 🛡️ **Compose hardening**: Whaley prepares every spawn from a per-instance copy, attaches the instance network automatically, and rejects dangerous compose options such as `privileged`, `network_mode`, host/container namespace sharing, added capabilities/devices, Docker socket mounts, external networks/volumes, unsafe build/env file paths, symlinks, and bind mounts that escape the challenge directory.
 
 > 📖 **More examples**: See [DOCUMENTATION.md](DOCUMENTATION.md#challenge-structure)
 
@@ -297,7 +302,7 @@ All key Whaley settings can be changed at runtime via the **Admin Panel → ⚙�
 | **Resources** | Container max memory, CPU cores, PID limit |
 | **Network** | Port range, isolation, public host |
 | **Features** | Dynamic flags, flag prefix |
-| **Authentication** | Auth mode (CTFd/None), CTFd URL, Admin Key |
+| **Authentication** | Auth mode (CTFd/None), CTFd URL, CTFd API key, local Admin Key fallback |
 | **Forensics** | Auto capture, retention period |
 
 Changes persist to the database and survive container restarts—no need to edit `docker-compose.yaml` or `.env` files.
@@ -310,6 +315,8 @@ Control which challenges are visible and spawnable from the **Challenge Manager*
 - **🔴 Inactive** — Hidden from users, spawn requests rejected (HTTP 403)
 
 Use this during competitions to stage challenges for later rounds, or to quickly disable a broken challenge without deleting it.
+
+Challenge uploads reject path traversal, absolute paths, and symlinks. Runtime challenge trees are also rejected if they contain symlinks. The browser editor only writes text files up to 2 MB, and Whaley blocks deleting a challenge while active instances are still using it.
 
 ### Enforced Resource Limits
 

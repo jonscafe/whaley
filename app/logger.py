@@ -82,7 +82,6 @@ class EventLogger:
         try:
             async with get_async_session() as session:
                 db_entry = EventLogModel(
-                    id=entry.id,
                     timestamp=entry.timestamp,
                     event_type=entry.event_type.value,
                     user_id=entry.user_id,

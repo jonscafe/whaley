@@ -1,7 +1,8 @@
 """Authentication handlers for CTFd and no-auth modes."""
+import ipaddress
 import httpx
-from typing import Optional, Tuple
-from fastapi import HTTPException, Header, Depends
+from typing import Optional
+from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .config import settings
@@ -24,6 +25,10 @@ class CTFdAuth:
     @property
     def api_key(self) -> str:
         return settings.CTFD_API_KEY or ""
+
+    def clear_cache(self) -> None:
+        """Clear cached CTFd metadata after settings change."""
+        self._ctfd_mode_cache = None
     
     async def get_ctfd_mode(self) -> str:
         """
@@ -127,6 +132,10 @@ class CTFdAuth:
     
     async def validate_token(self, token: str) -> Optional[UserInfo]:
         """Validate a CTFd access token and get user info."""
+        if not self.ctfd_url:
+            print("CTFd auth failed: CTFD_URL is not configured")
+            return None
+
         try:
             async with httpx.AsyncClient() as client:
                 # CTFd uses "Token <access_token>" format, not "Bearer"
@@ -154,6 +163,7 @@ class CTFdAuth:
                 user_data = data.get("data", {})
                 team_id = user_data.get("team_id")
                 team_name = None
+                user_type = user_data.get("type")
                 
                 # Fetch team name if user has team_id
                 if team_id:
@@ -165,7 +175,9 @@ class CTFdAuth:
                     user_id=str(user_data.get("id")),
                     username=user_data.get("name", "unknown"),
                     team_id=str(team_id) if team_id else None,
-                    team_name=team_name
+                    team_name=team_name,
+                    user_type=user_type,
+                    is_admin=user_type == "admin"
                 )
                 
         except Exception as e:
@@ -239,19 +251,61 @@ def get_team_mode_status() -> Optional[bool]:
     return _team_mode_enabled
 
 
+def _get_trusted_proxies() -> set:
+    """Parse trusted proxies from settings."""
+    if settings.TRUSTED_PROXIES == "*":
+        return {"*"}
+    return set(p.strip() for p in settings.TRUSTED_PROXIES.split(",") if p.strip())
+
+
+def get_authenticated_client_ip(request: Request) -> str:
+    """
+    Extract a client IP with trusted proxy validation.
+    This is used by no-auth mode, where the IP is the user identity.
+    """
+    direct_ip = request.client.host if request.client else "unknown"
+    trusted_proxies = _get_trusted_proxies()
+
+    is_trusted = False
+    if "*" in trusted_proxies:
+        is_trusted = True
+    elif direct_ip != "unknown":
+        try:
+            direct_addr = ipaddress.ip_address(direct_ip)
+            for proxy in trusted_proxies:
+                try:
+                    if "/" in proxy:
+                        if direct_addr in ipaddress.ip_network(proxy, strict=False):
+                            is_trusted = True
+                            break
+                    elif direct_addr == ipaddress.ip_address(proxy):
+                        is_trusted = True
+                        break
+                except ValueError:
+                    continue
+        except ValueError:
+            pass
+
+    if is_trusted:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip
+
+    return direct_ip
+
+
 async def get_current_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    x_forwarded_for: Optional[str] = Header(None),
-    x_real_ip: Optional[str] = Header(None),
 ) -> UserInfo:
     """Get the current authenticated user."""
     
     if settings.AUTH_MODE == AuthMode.NONE:
-        # Use IP-based identification
-        identifier = x_forwarded_for or x_real_ip or "anonymous"
-        # Use first IP if multiple
-        if "," in identifier:
-            identifier = identifier.split(",")[0].strip()
+        # Use IP-based identification, but only trust proxy headers from trusted proxies.
+        identifier = get_authenticated_client_ip(request) or "anonymous"
         return await no_auth.get_user(identifier)
     
     elif settings.AUTH_MODE == AuthMode.CTFD:

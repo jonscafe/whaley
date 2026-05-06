@@ -394,10 +394,14 @@ class ForensicsManager:
         )
         
         if success:
-            # Find the log_id we just created
-            timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
-            log_id = f"{challenge_id}_{owner_id[:8]}_{timestamp}"
-            return True, msg, log_id
+            matching_logs = [
+                log for log in self._logs.values()
+                if log.instance_id == instance_id and log.capture_type == "live"
+            ]
+            if matching_logs:
+                latest = max(matching_logs, key=lambda log: log.capture_time)
+                return True, msg, latest.log_id
+            return True, msg, None
         
         return False, msg, None
     

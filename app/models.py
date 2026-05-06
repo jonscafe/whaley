@@ -59,6 +59,9 @@ class Instance(BaseModel):
     public_urls: Dict[int, str] = Field(default_factory=dict)  # internal_port: url mapping
     network_name: Optional[str] = None  # Isolated network name for this instance
     error_message: Optional[str] = None  # Error details for failed spawns
+    work_dir: Optional[str] = Field(default=None, exclude=True)  # Per-instance compose workdir
+    compose_file: Optional[str] = Field(default=None, exclude=True)  # Per-instance compose file
+    temp_dir: Optional[str] = Field(default=None, exclude=True)  # Temp directory to remove on stop
 
 
 class SpawnRequest(BaseModel):
@@ -94,6 +97,8 @@ class UserInfo(BaseModel):
     username: str
     team_id: Optional[str] = None
     team_name: Optional[str] = None
+    user_type: Optional[str] = None
+    is_admin: bool = False
     
     def get_owner_id(self, team_mode: bool) -> str:
         """Get the owner ID for instances/flags (team_id in team mode, user_id otherwise)."""

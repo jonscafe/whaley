@@ -54,6 +54,7 @@ AUTH_MODE=none
 
 # For CTFd authentication
 CTFD_URL=https://your-ctfd.com
+CTFD_API_KEY=ctfd_admin_token_for_flags_and_sync
 
 # Your VPS public IP or domain (use "auto" for auto-detection)
 PUBLIC_HOST=auto
@@ -62,7 +63,7 @@ PUBLIC_HOST=auto
 PORT_RANGE_START=20000
 PORT_RANGE_END=50000
 
-# Admin dashboard access key (generate with: openssl rand -hex 32)
+# Local admin dashboard key for AUTH_MODE=none (generate with: openssl rand -hex 32)
 ADMIN_KEY=your-secure-admin-key
 ```
 
@@ -105,12 +106,14 @@ python -m uvicorn app.main:app --reload
 | `PORT_RANGE_END` | `50000` | End of port range for instances |
 | `INSTANCE_TIMEOUT` | `3600` | Default instance lifetime in seconds |
 | `CHALLENGES_DIR` | `./challenges` | Directory containing challenge definitions |
-| `ADMIN_KEY` | - | Secret key for admin dashboard access |
-| `CTFD_API_KEY` | - | CTFd admin API key (for dynamic flags) |
+| `ADMIN_KEY` | - | Local admin dashboard key used when `AUTH_MODE=none` |
+| `CTFD_API_KEY` | - | CTFd admin API key for dynamic flags, sync wizard, and team-mode detection |
 | `DYNAMIC_FLAGS_ENABLED` | `false` | Enable per-user dynamic flags |
 | `FLAG_PREFIX` | `FLAG` | Prefix for generated flags (e.g., `FLAG{...}`) |
 | `LOG_FILE` | `logs/events.jsonl` | Path to event log file |
 | `DEBUG` | `false` | Enable debug mode |
+| `ADMIN_RATE_LIMIT` | `150` | Admin API requests allowed per minute per client IP |
+| `TRUSTED_PROXIES` | `127.0.0.1,::1` | Comma-separated proxy IPs/CIDRs allowed to supply `X-Forwarded-For`/`X-Real-IP` |
 
 ### VPS Firewall Setup
 
@@ -202,6 +205,10 @@ services:
 
 > **Important:** Do NOT use `container_name` in your docker-compose as it prevents multiple instances from running simultaneously.
 
+Whaley starts each instance from a per-instance copy of the challenge directory. This keeps dynamic flag injection, resource-limit rewrites, and bind-mounted challenge files stable until the instance is stopped.
+
+Whaley also validates compose files before startup and rejects options that would bypass isolation, including `privileged`, `network_mode`, host/container namespaces, added capabilities/devices, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, absolute/home/environment-expanded bind sources, and bind paths containing `..`.
+
 ### Tips for Challenge Authors
 
 - **No `container_name`** - Don't use container_name to allow multiple instances
@@ -209,6 +216,7 @@ services:
 - **Set resource limits** - Add `mem_limit` and `cpus` to prevent abuse
 - **Multi-port challenges** - List all ports in challenge.yaml that users need to access
 - **Internal services** - Services like bots that don't need external access don't need port mappings
+- **Keep binds local** - Use relative paths inside the challenge directory if a service needs files from the repository
 
 ---
 
@@ -245,16 +253,26 @@ services:
 |----------|--------|-------------|
 | `/me` | GET | Get current user info |
 
-### Admin (requires ADMIN_KEY)
+### Admin API Authentication
+
+Admin API auth depends on `AUTH_MODE`:
+
+- `AUTH_MODE=ctfd`: send `Authorization: Bearer <CTFd access token>`. Whaley validates the token via CTFd and requires the CTFd user `type` to be `admin`.
+- `AUTH_MODE=none`: send `X-Admin-Key: <ADMIN_KEY>`.
+
+All admin endpoints are also rate-limited by client IP using `ADMIN_RATE_LIMIT`.
+
+### Admin (requires admin auth)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/admin` | GET | Admin dashboard UI |
+| `/admin/api/me` | GET | Verify admin auth and return the authenticated admin user |
 | `/admin/api/stats` | GET | Get system statistics |
 | `/admin/api/instances` | GET | List all active instances |
 | `/admin/api/logs` | GET | Get event logs (with filtering) |
 
-### Challenge Management (requires ADMIN_KEY)
+### Challenge Management (requires admin auth)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -267,7 +285,7 @@ services:
 | `/admin/api/challenges/{id}/files/{path}` | DELETE | Delete a file |
 | `/admin/api/challenges/{id}/reload` | POST | Reload challenge configuration |
 
-### Dynamic Flags / Anti-Cheat (requires ADMIN_KEY)
+### Dynamic Flags / Anti-Cheat (requires admin auth)
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -284,17 +302,19 @@ services:
 
 ```bash
 # Fetch all CTFd challenges with mapping info
-curl -H "X-Admin-Key: YOUR_KEY" \
+curl -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
   "http://localhost:8000/admin/api/ctfd/challenges"
 
 # Filter by search term
-curl -H "X-Admin-Key: YOUR_KEY" \
+curl -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
   "http://localhost:8000/admin/api/ctfd/challenges?search=web"
 
 # Filter by category
-curl -H "X-Admin-Key: YOUR_KEY" \
+curl -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
   "http://localhost:8000/admin/api/ctfd/challenges?category=Web"
 ```
+
+If `AUTH_MODE=none`, replace the header above with `X-Admin-Key: <ADMIN_KEY>`.
 
 Response:
 ```json
@@ -403,20 +423,30 @@ curl -X POST http://localhost:8000/instances/example-web-abc123-def456/extend
 
 ### CTFd Mode
 
-Users authenticate with their CTFd access token. The token is validated via CTFd's API (`/api/v1/users/me`).
+Users authenticate with their CTFd access token. Whaley accepts the token as a bearer token, then validates it against CTFd's API (`/api/v1/users/me`).
 
 **Via API:**
 ```bash
-curl -H "Authorization: Token YOUR_CTFD_TOKEN" \
+curl -H "Authorization: Bearer YOUR_CTFD_TOKEN" \
   http://your-instancer:8000/challenges
 ```
 
 **Via Web UI:**
 1. Open `http://your-instancer:8000/` in browser
 2. Enter your CTFd access token when prompted
-3. Token is saved in browser localStorage for convenience
+3. Token is saved in browser `sessionStorage` and clears when the tab/session closes
 
 To get a CTFd token, users go to CTFd → Settings → Access Tokens.
+
+### Admin RBAC in CTFd Mode
+
+The admin dashboard uses the same CTFd access-token flow as the user dashboard, but Whaley additionally checks the CTFd user role:
+
+1. The browser sends `Authorization: Bearer <token>` to `/admin/api/me`.
+2. Whaley calls CTFd `/api/v1/users/me` with that token.
+3. Admin access is granted only when the CTFd response has `type: "admin"`.
+
+Regular CTFd users can still use the challenge dashboard, but admin endpoints return HTTP 403. The user dashboard shows the **Admin Panel** link only when the authenticated CTFd user is an admin.
 
 ### No Auth Mode
 
@@ -426,13 +456,20 @@ Users are identified by IP address. No authentication required:
 curl http://your-instancer:8000/challenges
 ```
 
+In no-auth mode, admin endpoints require the local `ADMIN_KEY` via `X-Admin-Key`. If Whaley is behind a reverse proxy, set `TRUSTED_PROXIES` to the proxy IPs or CIDRs; otherwise forwarded IP headers are ignored to prevent IP spoofing.
+
 ---
 
 ## 📊 Admin Dashboard
 
 Access the admin dashboard at `http://your-instancer:8000/admin`
 
-The admin dashboard has 3 pages:
+Authentication follows the admin API rules:
+
+- In CTFd mode, enter a CTFd access token from an admin user.
+- In no-auth mode, enter the local `ADMIN_KEY` configured for Whaley.
+
+The admin dashboard has these tabs:
 
 ### 1. Dashboard
 - 📈 **Statistics** - Total spawns, active instances, unique users
@@ -453,7 +490,12 @@ The admin dashboard has 3 pages:
 - 📁 **File Browser** - Browse and edit challenge files
 - 🔄 **Reload Config** - Apply changes to challenge.yaml
 
-**Authentication:** Enter the `ADMIN_KEY` configured in your `.env` file.
+### 5. Monitoring
+- 🔍 **System Metrics** - View host/container CPU and memory usage
+- 📦 **Per-Instance Metrics** - Identify heavy instances and containers
+
+### 6. Settings
+- ⚙️ **Live Settings** - Update editable Whaley settings without restarting the service
 
 **Log Format (JSONL):**
 ```json
@@ -498,9 +540,12 @@ The admin dashboard includes a **Challenge Manager** that allows you to upload a
 
 ### Security
 
-- All file operations are protected with path traversal checks
-- Binary files are marked as non-editable
-- Challenge directories are isolated within `./challenges/`
+- Zip uploads reject path traversal, absolute paths, Windows absolute paths, and symlinks
+- All file operations are protected with path traversal checks and stay inside `./challenges/`
+- Binary files are marked as non-editable; writes are limited to text files up to 2 MB
+- Challenge IDs may come from `challenge.yaml` and can differ from folder names; the manager resolves both safely
+- Challenge deletion is blocked while active instances are still using the challenge
+- Runtime spawns also reject challenge source trees that contain symlinks
 
 ---
 
@@ -614,7 +659,7 @@ DATABASE_URL=postgresql+asyncpg://user:pass@db:5432/whaley
 
 #### 2. Distributed Locking (Redis)
 
-Prevents race conditions when running multiple Gunicorn workers.
+Prevents race conditions when running multiple Gunicorn workers. Spawn checks, persistent port assignment, and Docker Compose startup are protected by locks; with Redis enabled, Whaley holds a distributed port-allocation lock until compose startup has bound the selected ports.
 
 | Without Redis | With Redis |
 |---------------|------------|
@@ -648,6 +693,7 @@ Each instance runs in its own isolated Docker bridge network.
 - 🔒 Instances cannot communicate with each other
 - 🛡️ Prevents lateral movement attacks between challenges
 - 🧪 Automatic network cleanup on instance termination
+- 🧱 Compose files are attached to the per-instance external network automatically
 
 **Configuration:**
 ```env
@@ -698,6 +744,8 @@ services:
 | `NETWORK_ISOLATION_ENABLED` | `true` | Create isolated network per instance |
 | `NETWORK_ICC_DISABLED` | `true` | Disable inter-container communication |
 | `NETWORK_PREFIX` | `whaley` | Prefix for instance networks |
+| `ADMIN_RATE_LIMIT` | `150` | Admin API requests allowed per minute per client IP |
+| `TRUSTED_PROXIES` | `127.0.0.1,::1` | Trusted reverse proxies for forwarded client IP headers |
 
 ## ⚠️ Capacity Planning & Server Requirements
 
@@ -868,6 +916,8 @@ services:
         soft: 1024
         hard: 2048
 ```
+
+Whaley enforces global caps (`CONTAINER_MAX_MEMORY`, `CONTAINER_MAX_CPU`, and `CONTAINER_PIDS_LIMIT`) on every service before startup. If a challenge requests a larger limit, the global cap wins.
 
 ### Recommended Limits by Challenge Type
 
@@ -1061,28 +1111,30 @@ FORENSICS_COMPRESSION=true
 ```bash
 # Get forensics stats
 curl -X GET "http://localhost:8000/admin/api/forensics/stats" \
-     -H "X-Admin-Key: your-key"
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # Toggle auto capture
 curl -X POST "http://localhost:8000/admin/api/forensics/toggle?enabled=true" \
-     -H "X-Admin-Key: your-key"
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # List all logs
 curl -X GET "http://localhost:8000/admin/api/forensics/logs" \
-     -H "X-Admin-Key: your-key"
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # Live capture from running instance
 curl -X POST "http://localhost:8000/admin/api/forensics/live-capture/{instance_id}" \
-     -H "X-Admin-Key: your-key"
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # Get log content
 curl -X GET "http://localhost:8000/admin/api/forensics/logs/{log_id}" \
-     -H "X-Admin-Key: your-key"
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # Cleanup old logs manually
 curl -X POST "http://localhost:8000/admin/api/forensics/cleanup" \
-     -H "X-Admin-Key: your-key"
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 ```
+
+Use `X-Admin-Key: <ADMIN_KEY>` instead when `AUTH_MODE=none`.
 
 ### Best Practices
 
@@ -1429,7 +1481,7 @@ http {
 
 ---
 
-## � Resource Monitoring
+## 🔍 Resource Monitoring
 
 Whaley includes native resource monitoring to track CPU and memory usage of containers and the host system. This helps identify resource-intensive instances and prevent server overload.
 
@@ -1462,7 +1514,7 @@ Whaley includes native resource monitoring to track CPU and memory usage of cont
 ```bash
 # Get system metrics
 curl -X GET "http://localhost:8000/admin/api/monitoring/system" \
-     -H "X-Admin-Key: your-key"
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # Response:
 {
@@ -1479,7 +1531,7 @@ curl -X GET "http://localhost:8000/admin/api/monitoring/system" \
 
 # Get per-instance metrics
 curl -X GET "http://localhost:8000/admin/api/monitoring/instances" \
-     -H "X-Admin-Key: your-key"
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # Response:
 {
@@ -1641,15 +1693,18 @@ Then configure Prometheus to scrape these endpoints for long-term storage and al
 
 ---
 
-## �🔒 Security
+## 🔒 Security
 
 ### Considerations
 
 1. **Firewall** - Only open necessary ports (API port + instance range)
-2. **Resource Limits** - Set proper mem_limit and cpus in challenges
-3. **Network Isolation** - Consider separate networks per instance
-4. **Timeouts** - Set reasonable instance timeouts
-5. **Rate Limiting** - Add rate limiting for production (e.g., slowapi)
+2. **Admin RBAC** - In CTFd mode, use CTFd admin users for `/admin`; in no-auth mode protect `ADMIN_KEY` like a password
+3. **Resource Limits** - Set proper `mem_limit` and `cpus` in challenges; Whaley also enforces global caps
+4. **Network Isolation** - Keep per-instance network isolation enabled for production
+5. **Compose Hardening** - Challenge compose files cannot use privileged mode, host/container namespaces, custom `network_mode`, added capabilities/devices, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, or bind mounts outside the challenge directory
+6. **Trusted Proxies** - Configure `TRUSTED_PROXIES` when using no-auth mode behind a reverse proxy so client identity cannot be spoofed with forwarded headers
+7. **Timeouts** - Set reasonable instance timeouts
+8. **Rate Limiting** - Admin APIs have built-in per-IP limits; add edge rate limiting for public endpoints in high-traffic events
 
 ### Persistent Port Mapping
 
@@ -1786,7 +1841,7 @@ With `TEAM_MODE=auto` (default), Whaley automatically detects CTFd's competition
 1. At startup, queries CTFd API: `GET /api/v1/configs/user_mode`
 2. If response is `"teams"` → Team mode enabled
 3. If response is `"users"` → User mode enabled
-4. Result is cached for the application lifetime
+4. Result is cached until auth/CTFd settings are changed or the service restarts
 
 #### How Team Mode Works
 
@@ -1854,10 +1909,12 @@ When team mode is enabled, the user dashboard shows:
 
 ### Challenge Manager Security
 
-- All file operations are protected with path traversal checks
-- Binary files are marked as non-editable
-- Challenge directories are isolated within `./challenges/`
-- Admin key required for all management operations
+- Uploads reject traversal paths, absolute paths, Windows absolute paths, and symlinks
+- File operations stay inside `./challenges/` and cannot target the challenge root as a file
+- Binary files are non-editable; text writes are capped at 2 MB
+- Runtime spawns reject symlinked challenge trees before Docker build/start
+- Deleting a challenge with active instances is blocked
+- Admin auth is required for all management operations
 
 ---
 

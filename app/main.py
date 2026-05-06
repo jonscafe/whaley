@@ -6,11 +6,13 @@ import tempfile
 import time
 import asyncio
 import ipaddress
+import secrets
+import yaml
 from collections import defaultdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from contextlib import asynccontextmanager
-from typing import Optional, List, Dict
-from fastapi import FastAPI, Depends, HTTPException, Header, Request, UploadFile, File, Form
+from typing import Optional, List, Dict, Tuple
+from fastapi import FastAPI, Depends, HTTPException, Header, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -19,7 +21,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from .config import settings, Settings
 from .models import (
     UserInfo, SpawnRequest, SpawnResponse, 
-    InstanceListResponse, ChallengeListResponse, Instance
+    InstanceListResponse, ChallengeListResponse, AuthMode
 )
 from .auth import get_current_user, init_auth, init_team_mode, is_team_mode, ctfd_auth, security
 from .port_manager import PortManager
@@ -55,6 +57,7 @@ USER_RATE_WINDOW = 60  # 60 seconds window
 MAX_ZIP_SIZE = 50 * 1024 * 1024  # 50MB
 MAX_ZIP_ENTRIES = 1000
 MAX_EXTRACTED_SIZE = 200 * 1024 * 1024  # 200MB total extracted
+MAX_TEXT_FILE_SIZE = 2 * 1024 * 1024  # 2MB max editor file size
 
 # Background task for auto-checking submissions
 _submission_check_task: Optional[asyncio.Task] = None
@@ -171,6 +174,21 @@ async def _load_settings_from_db():
         print(f"[Settings] Warning: Failed to load settings from DB: {e}")
 
 
+def _apply_runtime_settings() -> None:
+    """Apply settings that are copied into long-lived manager instances."""
+    port_manager.port_start = settings.PORT_RANGE_START
+    port_manager.port_end = settings.PORT_RANGE_END
+
+    if ctfd_auth:
+        ctfd_auth.clear_cache()
+
+    try:
+        forensics = get_forensics_manager()
+        forensics.set_auto_capture(settings.FORENSICS_AUTO_CAPTURE)
+    except Exception as e:
+        print(f"[Settings] Warning: Failed to apply forensics setting: {e}")
+
+
 async def _auto_check_submissions():
     """Background task to automatically check submissions for cheating."""
     print(f"[AutoCheck] Starting automatic submission checker (interval: {SUBMISSION_CHECK_INTERVAL}s)")
@@ -214,6 +232,10 @@ async def lifespan(app: FastAPI):
     # Startup - Initialize infrastructure
     print("[Startup] Initializing database...")
     await init_database()
+
+    # Load settings overrides from database before managers copy values from settings.
+    await _load_settings_from_db()
+    _apply_runtime_settings()
     
     print("[Startup] Initializing distributed lock manager...")
     await init_lock_manager(settings.REDIS_URL)
@@ -227,9 +249,6 @@ async def lifespan(app: FastAPI):
     init_auth()
     docker_manager.load_challenges()
     await docker_manager.load_challenge_settings()
-    
-    # Load settings overrides from database
-    await _load_settings_from_db()
     
     await docker_manager.start_cleanup_task()
     
@@ -640,15 +659,13 @@ async def get_my_team(
 
 # ============== ADMIN ROUTES ==============
 
-def verify_admin_key(
-    request: Request,
-    x_admin_key: Optional[str] = Header(None)
-) -> bool:
-    """Verify admin key from header with rate limiting."""
-    if not settings.ADMIN_KEY:
-        raise HTTPException(status_code=500, detail="Admin key not configured")
-    
-    # Rate limiting check
+def _settings_auth_mode() -> str:
+    """Return the current auth mode as a plain string."""
+    return settings.AUTH_MODE.value if hasattr(settings.AUTH_MODE, "value") else str(settings.AUTH_MODE)
+
+
+def _check_admin_rate_limit(request: Request) -> str:
+    """Apply per-IP rate limiting for admin APIs and return the client IP."""
     client_ip = get_client_ip(request)
     current_time = time.time()
     window_start = current_time - 60  # 1 minute window
@@ -671,21 +688,90 @@ def verify_admin_key(
     
     # Record this request
     _admin_rate_limit[client_ip].append(current_time)
-    
-    if not x_admin_key or x_admin_key != settings.ADMIN_KEY:
+
+    return client_ip
+
+
+async def verify_admin_key(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    x_admin_key: Optional[str] = Header(None)
+) -> UserInfo:
+    """
+    Verify admin access.
+
+    In CTFd mode this validates the bearer token through CTFd and requires
+    the CTFd user type to be "admin". In no-auth mode, keep ADMIN_KEY as a
+    local fallback because there is no upstream RBAC source.
+    """
+    client_ip = _check_admin_rate_limit(request)
+    auth_mode = _settings_auth_mode()
+
+    if auth_mode == AuthMode.CTFD.value:
+        if not credentials:
+            get_event_logger().log_sync(
+                EventType.AUTH_FAILURE,
+                f"Missing CTFd admin token from IP {client_ip}"
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="CTFd admin token required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user = await ctfd_auth.validate_token(credentials.credentials)
+        if not user:
+            get_event_logger().log_sync(
+                EventType.AUTH_FAILURE,
+                f"Invalid CTFd admin token from IP {client_ip}"
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired CTFd token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if not user.is_admin:
+            get_event_logger().log_sync(
+                EventType.AUTH_FAILURE,
+                f"Non-admin CTFd user '{user.username}' attempted admin access from IP {client_ip}"
+            )
+            raise HTTPException(status_code=403, detail="CTFd admin role required")
+
+        return user
+
+    if not settings.ADMIN_KEY:
+        raise HTTPException(status_code=500, detail="Admin key not configured")
+
+    if not x_admin_key or not secrets.compare_digest(str(x_admin_key), str(settings.ADMIN_KEY)):
         get_event_logger().log_sync(
             EventType.AUTH_FAILURE,
             f"Invalid admin key attempt from IP {client_ip}"
         )
         raise HTTPException(status_code=401, detail="Invalid admin key")
-    
-    return True
+
+    return UserInfo(
+        user_id="admin-key",
+        username="admin",
+        user_type="admin",
+        is_admin=True,
+    )
 
 
 @app.get("/admin")
 async def admin_dashboard():
     """Serve the admin dashboard UI."""
     return FileResponse(str(STATIC_DIR / "admin.html"))
+
+
+@app.get("/admin/api/me")
+async def admin_me(admin: UserInfo = Depends(verify_admin_key)):
+    """Verify admin access and return the authenticated admin user."""
+    return {
+        "success": True,
+        "auth_mode": _settings_auth_mode(),
+        "user": admin.model_dump(),
+    }
 
 
 @app.get("/admin/api/stats")
@@ -1457,16 +1543,69 @@ BINARY_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2',
                      '.ttf', '.eot', '.zip', '.tar', '.gz', '.so', '.exe', '.bin'}
 
 
-def is_safe_path(base_path: Path, requested_path: Path) -> bool:
+def is_safe_path(base_path: Path, requested_path: Path, allow_base: bool = False) -> bool:
     """Check if requested path is within base path (prevent path traversal)."""
     try:
         resolved = requested_path.resolve()
         base_resolved = base_path.resolve()
         # Use is_relative_to for proper path traversal prevention
         # startswith can be bypassed with paths like /challenges-evil
-        return resolved.is_relative_to(base_resolved)
+        if not resolved.is_relative_to(base_resolved):
+            return False
+        return allow_base or resolved != base_resolved
     except Exception:
         return False
+
+
+def is_editable_text_file(path: Path) -> bool:
+    """Return whether the challenge manager is allowed to edit this file."""
+    return path.suffix.lower() in ALLOWED_EXTENSIONS or path.suffix == ''
+
+
+def get_challenge_config_id(challenge_dir: Path) -> str:
+    """Read a challenge ID from challenge.yaml, falling back to the folder name."""
+    config_file = challenge_dir / "challenge.yaml"
+    if not config_file.exists():
+        return challenge_dir.name
+
+    try:
+        with open(config_file) as f:
+            cfg = yaml.safe_load(f) or {}
+        return str(cfg.get("id") or challenge_dir.name)
+    except Exception:
+        return challenge_dir.name
+
+
+def resolve_challenge_dir(challenge_ref: str) -> Tuple[Path, str]:
+    """
+    Resolve a challenge reference by configured ID or folder name.
+    Returns (challenge_dir, canonical_challenge_id).
+    """
+    if not challenge_ref or challenge_ref in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid challenge ID")
+
+    challenges_path = Path(settings.CHALLENGES_DIR)
+
+    # Prefer loaded challenge IDs, because the folder can differ from challenge.yaml:id.
+    challenge = docker_manager.get_challenge(challenge_ref)
+    if challenge and is_safe_path(challenges_path, challenge.path):
+        return challenge.path, challenge.id
+
+    if challenges_path.exists():
+        for item in challenges_path.iterdir():
+            if item.is_dir() and not item.is_symlink():
+                config_id = get_challenge_config_id(item)
+                if config_id == challenge_ref and is_safe_path(challenges_path, item):
+                    return item, config_id
+
+    # Fall back to folder name for unloaded or invalid challenges.
+    challenge_dir = challenges_path / challenge_ref
+    if not is_safe_path(challenges_path, challenge_dir):
+        raise HTTPException(status_code=400, detail="Invalid challenge ID")
+    if not challenge_dir.exists() or not challenge_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Challenge not found")
+
+    return challenge_dir, get_challenge_config_id(challenge_dir)
 
 
 def get_file_tree(directory: Path, base_path: Path) -> List[dict]:
@@ -1474,6 +1613,8 @@ def get_file_tree(directory: Path, base_path: Path) -> List[dict]:
     items = []
     try:
         for item in sorted(directory.iterdir()):
+            if item.is_symlink():
+                continue
             rel_path = str(item.relative_to(base_path))
             if item.is_dir():
                 items.append({
@@ -1488,9 +1629,9 @@ def get_file_tree(directory: Path, base_path: Path) -> List[dict]:
                     "path": rel_path,
                     "type": "file",
                     "size": item.stat().st_size,
-                    "editable": item.suffix.lower() in ALLOWED_EXTENSIONS or item.suffix == ''
+                    "editable": is_editable_text_file(item)
                 })
-    except PermissionError:
+    except (OSError, ValueError, PermissionError):
         pass
     return items
 
@@ -1500,34 +1641,19 @@ async def admin_list_challenges(_: bool = Depends(verify_admin_key)):
     """List all challenges with their directories."""
     challenges_path = Path(settings.CHALLENGES_DIR)
     challenges = []
+    loaded_ids = {c.id for c in docker_manager.get_challenges()}
     
     if challenges_path.exists():
         for item in challenges_path.iterdir():
-            if item.is_dir():
+            if item.is_dir() and not item.is_symlink():
                 config_file = item / "challenge.yaml"
                 compose_yaml = item / "docker-compose.yaml"
                 compose_yml = item / "docker-compose.yml"
                 
                 has_config = config_file.exists()
                 has_compose = compose_yaml.exists() or compose_yml.exists()
-                
-                # Get challenge ID from loaded challenges (may differ from folder name)
-                loaded_ids = [c.id for c in docker_manager.get_challenges()]
-                is_loaded = item.name in loaded_ids
-                
-                # Also check if config's id is loaded (folder name might differ)
-                config_id = item.name
-                if has_config and not is_loaded:
-                    try:
-                        import yaml
-                        with open(config_file) as f:
-                            cfg = yaml.safe_load(f)
-                            if cfg and cfg.get('id'):
-                                config_id = cfg.get('id')
-                                if config_id in loaded_ids:
-                                    is_loaded = True
-                    except:
-                        pass
+                config_id = get_challenge_config_id(item)
+                is_loaded = config_id in loaded_ids
                 
                 challenges.append({
                     "id": config_id,
@@ -1540,6 +1666,33 @@ async def admin_list_challenges(_: bool = Depends(verify_admin_key)):
                 })
     
     return {"challenges": challenges}
+
+
+def validate_zip_member_path(filename: str) -> None:
+    """Reject archive members that could escape the extraction directory."""
+    normalized = filename.replace("\\", "/")
+    posix_path = PurePosixPath(normalized)
+    windows_path = PureWindowsPath(filename)
+
+    if (
+        posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or any(part == ".." for part in posix_path.parts)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid path in zip: {filename} (potential zip slip attack)"
+        )
+
+
+def ensure_no_symlinks(directory: Path) -> None:
+    """Reject extracted archives containing symlinks."""
+    for item in directory.rglob("*"):
+        if item.is_symlink():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Zip contains unsupported symlink: {item.relative_to(directory)}"
+            )
 
 
 @app.post("/admin/api/challenges/upload")
@@ -1587,18 +1740,14 @@ async def admin_upload_challenge(
             
             # Check for zip slip vulnerability (path traversal in filenames)
             for info in zip_ref.infolist():
-                # Normalize and check for path traversal
-                member_path = Path(info.filename)
-                if member_path.is_absolute() or ".." in member_path.parts:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Invalid path in zip: {info.filename} (potential zip slip attack)"
-                    )
+                validate_zip_member_path(info.filename)
         
         # Extract to temp directory first
         with tempfile.TemporaryDirectory() as tmp_dir:
             with zipfile.ZipFile(tmp_path, 'r') as zip_ref:
                 zip_ref.extractall(tmp_dir)
+
+            ensure_no_symlinks(Path(tmp_dir))
             
             # Find the root directory (handle nested zips)
             extracted_items = list(Path(tmp_dir).iterdir())
@@ -1631,20 +1780,24 @@ async def admin_upload_challenge(
         
         # Reload challenges
         docker_manager.load_challenges()
+        uploaded_id = get_challenge_config_id(target_dir)
         
         logger = get_event_logger()
         await logger.log(
             EventType.SYSTEM_START,
             f"Challenge uploaded: {challenge_name}",
-            details={"challenge_id": challenge_name, "filename": file.filename}
+            details={"challenge_id": uploaded_id, "folder": challenge_name, "filename": file.filename}
         )
         
         return {
             "success": True,
             "message": f"Challenge '{challenge_name}' uploaded successfully",
-            "challenge_id": challenge_name
+            "challenge_id": uploaded_id,
+            "folder": challenge_name
         }
     
+    except HTTPException:
+        raise
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid zip file")
     except Exception as e:
@@ -1659,14 +1812,13 @@ async def admin_delete_challenge(
     _: bool = Depends(verify_admin_key)
 ):
     """Delete a challenge directory."""
-    challenges_path = Path(settings.CHALLENGES_DIR)
-    challenge_dir = challenges_path / challenge_id
-    
-    if not is_safe_path(challenges_path, challenge_dir):
-        raise HTTPException(status_code=400, detail="Invalid challenge ID")
-    
-    if not challenge_dir.exists():
-        raise HTTPException(status_code=404, detail="Challenge not found")
+    challenge_dir, canonical_id = resolve_challenge_dir(challenge_id)
+
+    if any(i.challenge_id == canonical_id for i in docker_manager.instances.values()):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete a challenge with active instances"
+        )
     
     try:
         shutil.rmtree(challenge_dir)
@@ -1675,11 +1827,11 @@ async def admin_delete_challenge(
         logger = get_event_logger()
         await logger.log(
             EventType.SYSTEM_STOP,
-            f"Challenge deleted: {challenge_id}",
-            details={"challenge_id": challenge_id}
+            f"Challenge deleted: {canonical_id}",
+            details={"challenge_id": canonical_id, "folder": challenge_dir.name}
         )
         
-        return {"success": True, "message": f"Challenge '{challenge_id}' deleted"}
+        return {"success": True, "message": f"Challenge '{canonical_id}' deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete: {str(e)}")
 
@@ -1690,17 +1842,10 @@ async def admin_get_challenge_files(
     _: bool = Depends(verify_admin_key)
 ):
     """Get file tree for a challenge."""
-    challenges_path = Path(settings.CHALLENGES_DIR)
-    challenge_dir = challenges_path / challenge_id
-    
-    if not is_safe_path(challenges_path, challenge_dir):
-        raise HTTPException(status_code=400, detail="Invalid challenge ID")
-    
-    if not challenge_dir.exists():
-        raise HTTPException(status_code=404, detail="Challenge not found")
+    challenge_dir, canonical_id = resolve_challenge_dir(challenge_id)
     
     return {
-        "challenge_id": challenge_id,
+        "challenge_id": canonical_id,
         "files": get_file_tree(challenge_dir, challenge_dir)
     }
 
@@ -1712,8 +1857,7 @@ async def admin_read_file(
     _: bool = Depends(verify_admin_key)
 ):
     """Read a file from a challenge."""
-    challenges_path = Path(settings.CHALLENGES_DIR)
-    challenge_dir = challenges_path / challenge_id
+    challenge_dir, _ = resolve_challenge_dir(challenge_id)
     target_file = challenge_dir / file_path
     
     if not is_safe_path(challenge_dir, target_file):
@@ -1725,9 +1869,14 @@ async def admin_read_file(
     if target_file.is_dir():
         raise HTTPException(status_code=400, detail="Cannot read directory")
     
-    # Check if binary
-    if target_file.suffix.lower() in BINARY_EXTENSIONS:
+    if not is_editable_text_file(target_file) or target_file.suffix.lower() in BINARY_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Cannot edit binary files")
+
+    if target_file.stat().st_size > MAX_TEXT_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File is too large to edit (max {MAX_TEXT_FILE_SIZE // (1024 * 1024)}MB)"
+        )
     
     try:
         content = target_file.read_text(encoding='utf-8')
@@ -1750,23 +1899,38 @@ async def admin_write_file(
     _: bool = Depends(verify_admin_key)
 ):
     """Write/update a file in a challenge."""
-    challenges_path = Path(settings.CHALLENGES_DIR)
-    challenge_dir = challenges_path / challenge_id
+    if not file_path or file_path in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    challenge_dir, _ = resolve_challenge_dir(challenge_id)
     target_file = challenge_dir / file_path
     
     if not is_safe_path(challenge_dir, target_file):
         raise HTTPException(status_code=400, detail="Invalid file path")
+
+    if target_file.exists() and target_file.is_dir():
+        raise HTTPException(status_code=400, detail="Cannot overwrite a directory")
+
+    if not is_editable_text_file(target_file) or target_file.suffix.lower() in BINARY_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Cannot edit binary files")
     
     body = await request.json()
     content = body.get("content", "")
+    if not isinstance(content, str):
+        raise HTTPException(status_code=400, detail="File content must be a string")
+    if len(content.encode("utf-8")) > MAX_TEXT_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File is too large to save (max {MAX_TEXT_FILE_SIZE // (1024 * 1024)}MB)"
+        )
     
     try:
         # Create parent directories if needed
         target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_text(content, encoding='utf-8')
         
-        # Reload if it's a config file
-        if target_file.name in ['challenge.yaml', 'challenge.yml']:
+        # Reload if it's a challenge metadata or deployment file.
+        if target_file.name in ['challenge.yaml', 'challenge.yml', 'docker-compose.yaml', 'docker-compose.yml']:
             docker_manager.load_challenges()
         
         return {
@@ -1796,8 +1960,10 @@ async def admin_delete_file(
     _: bool = Depends(verify_admin_key)
 ):
     """Delete a file from a challenge."""
-    challenges_path = Path(settings.CHALLENGES_DIR)
-    challenge_dir = challenges_path / challenge_id
+    if not file_path or file_path in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    challenge_dir, _ = resolve_challenge_dir(challenge_id)
     target_file = challenge_dir / file_path
     
     if not is_safe_path(challenge_dir, target_file):
@@ -1811,6 +1977,9 @@ async def admin_delete_file(
             shutil.rmtree(target_file)
         else:
             target_file.unlink()
+
+        if target_file.name in ['challenge.yaml', 'challenge.yml', 'docker-compose.yaml', 'docker-compose.yml']:
+            docker_manager.load_challenges()
         
         return {"success": True, "message": f"Deleted: {file_path}"}
     except Exception as e:
@@ -1823,20 +1992,21 @@ async def admin_reload_challenge(
     _: bool = Depends(verify_admin_key)
 ):
     """Reload challenge configuration."""
+    _, canonical_id = resolve_challenge_dir(challenge_id)
     docker_manager.load_challenges()
     await docker_manager.load_challenge_settings()
     
-    challenge = docker_manager.get_challenge(challenge_id)
+    challenge = docker_manager.get_challenge(canonical_id)
     if challenge:
         return {
             "success": True,
-            "message": f"Challenge '{challenge_id}' reloaded",
+            "message": f"Challenge '{canonical_id}' reloaded",
             "challenge": challenge.to_info().model_dump()
         }
     else:
         return {
             "success": False,
-            "message": f"Challenge '{challenge_id}' failed to load (check challenge.yaml)"
+            "message": f"Challenge '{canonical_id}' failed to load (check challenge.yaml)"
         }
 
 
@@ -1855,12 +2025,13 @@ async def admin_toggle_challenge(
     from .database.models import ChallengeSettings
     from sqlalchemy import select
     
+    _, canonical_id = resolve_challenge_dir(challenge_id)
     body = await request.json()
     is_active = body.get("is_active", True)
     
     async with get_async_session() as session:
         result = await session.execute(
-            select(ChallengeSettings).where(ChallengeSettings.challenge_id == challenge_id)
+            select(ChallengeSettings).where(ChallengeSettings.challenge_id == canonical_id)
         )
         cs = result.scalars().first()
         
@@ -1868,7 +2039,7 @@ async def admin_toggle_challenge(
             cs.is_active = 1 if is_active else 0
         else:
             cs = ChallengeSettings(
-                challenge_id=challenge_id,
+                challenge_id=canonical_id,
                 is_active=1 if is_active else 0
             )
             session.add(cs)
@@ -1882,13 +2053,13 @@ async def admin_toggle_challenge(
     logger = get_event_logger()
     await logger.log(
         EventType.SYSTEM_START,
-        f"Challenge '{challenge_id}' set to {status}",
-        details={"challenge_id": challenge_id, "is_active": is_active}
+        f"Challenge '{canonical_id}' set to {status}",
+        details={"challenge_id": canonical_id, "is_active": is_active}
     )
     
     return {
         "success": True,
-        "message": f"Challenge '{challenge_id}' is now {status}",
+        "message": f"Challenge '{canonical_id}' is now {status}",
         "is_active": is_active
     }
 
@@ -1926,13 +2097,14 @@ async def admin_set_challenge_resources(
     from .database.models import ChallengeSettings
     from sqlalchemy import select
     
+    _, canonical_id = resolve_challenge_dir(challenge_id)
     body = await request.json()
     max_memory = body.get("max_memory")  # e.g., "256m", null to use global
     max_cpu = body.get("max_cpu")  # e.g., "0.5", null to use global
     
     async with get_async_session() as session:
         result = await session.execute(
-            select(ChallengeSettings).where(ChallengeSettings.challenge_id == challenge_id)
+            select(ChallengeSettings).where(ChallengeSettings.challenge_id == canonical_id)
         )
         cs = result.scalars().first()
         
@@ -1941,7 +2113,7 @@ async def admin_set_challenge_resources(
             cs.max_cpu = max_cpu
         else:
             cs = ChallengeSettings(
-                challenge_id=challenge_id,
+                challenge_id=canonical_id,
                 max_memory=max_memory,
                 max_cpu=max_cpu
             )
@@ -1953,7 +2125,7 @@ async def admin_set_challenge_resources(
     
     return {
         "success": True,
-        "message": f"Resource limits updated for '{challenge_id}'",
+        "message": f"Resource limits updated for '{canonical_id}'",
         "max_memory": max_memory,
         "max_cpu": max_cpu
     }
@@ -2097,6 +2269,12 @@ async def admin_update_settings(
     
     # Log the change
     if applied:
+        _apply_runtime_settings()
+        if any(k in applied for k in ("AUTH_MODE", "CTFD_URL", "CTFD_API_KEY")):
+            await init_team_mode()
+        if any(k in applied for k in ("PORT_RANGE_START", "PORT_RANGE_END")):
+            print(f"[Settings] Port manager range updated to {port_manager.port_start}-{port_manager.port_end}")
+
         logger = get_event_logger()
         await logger.log(
             EventType.SYSTEM_START,
@@ -2137,6 +2315,10 @@ async def admin_reset_setting(
         default_value = getattr(default_settings, key, None)
         if default_value is not None:
             setattr(settings, key, default_value)
+
+        _apply_runtime_settings()
+        if key in ("AUTH_MODE", "CTFD_URL", "CTFD_API_KEY"):
+            await init_team_mode()
         
         return {
             "success": True,
@@ -2178,6 +2360,9 @@ async def admin_reload_settings(_: bool = Depends(verify_admin_key)):
         raise HTTPException(status_code=500, detail=f"Failed to reload settings: {e}")
     
     # Also reload challenge settings
+    _apply_runtime_settings()
+    if any(k in applied for k in ("AUTH_MODE", "CTFD_URL", "CTFD_API_KEY")):
+        await init_team_mode()
     await docker_manager.load_challenge_settings()
     
     return {
