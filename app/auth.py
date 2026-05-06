@@ -161,6 +161,31 @@ class CTFdAuth:
                     return None
                 
                 user_data = data.get("data", {})
+                user_id = user_data.get("id")
+                if not user_id:
+                    print(f"CTFd auth failed: missing user id in response={data}")
+                    return None
+
+                # CTFd's /users/me response may omit role/type on some setups.
+                # Fetch the detailed user record and use its "type" field for RBAC.
+                detail_response = await client.get(
+                    f"{self.ctfd_url}/api/v1/users/{user_id}",
+                    headers=headers,
+                    timeout=10.0
+                )
+                if detail_response.status_code == 200:
+                    detail_data = detail_response.json()
+                    if detail_data.get("success"):
+                        user_data = {
+                            **user_data,
+                            **(detail_data.get("data") or {})
+                        }
+                else:
+                    print(
+                        f"CTFd user detail lookup failed: user_id={user_id}, "
+                        f"status={detail_response.status_code}, body={detail_response.text}"
+                    )
+
                 team_id = user_data.get("team_id")
                 team_name = None
                 user_type = user_data.get("type")

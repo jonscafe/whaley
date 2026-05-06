@@ -155,7 +155,7 @@ CONTAINER_PIDS_LIMIT=256          # Max PIDs per container (fork bomb protection
 
 > 💡 **Tip**: Most settings (including Authentication & CTFd integration) can be configured instantly via the **Admin Panel → ⚙️ Settings** tab.
 
-> 🔐 **Admin access**: In `AUTH_MODE=ctfd`, Whaley validates the submitted CTFd access token against CTFd's `/api/v1/users/me` endpoint and only enables `/admin` for users whose CTFd user type is `admin`. In `AUTH_MODE=none`, admin APIs use the local `ADMIN_KEY` fallback.
+> 🔐 **Admin access**: In `AUTH_MODE=ctfd`, Whaley validates the submitted CTFd access token with CTFd's `/api/v1/users/me`, then fetches `/api/v1/users/{id}` and only enables `/admin` when that detailed user record has `type: "admin"`. In `AUTH_MODE=none`, admin APIs use the local `ADMIN_KEY` fallback.
 
 > 📖 **Full configuration guide**: See [DOCUMENTATION.md](DOCUMENTATION.md#configuration)
 

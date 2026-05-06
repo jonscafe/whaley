@@ -423,7 +423,7 @@ curl -X POST http://localhost:8000/instances/example-web-abc123-def456/extend
 
 ### CTFd Mode
 
-Users authenticate with their CTFd access token. Whaley accepts the token as a bearer token, then validates it against CTFd's API (`/api/v1/users/me`).
+Users authenticate with their CTFd access token. Whaley accepts the token as a bearer token, validates it against CTFd's API (`/api/v1/users/me`), then fetches the detailed user record from `/api/v1/users/{id}`.
 
 **Via API:**
 ```bash
@@ -443,8 +443,9 @@ To get a CTFd token, users go to CTFd → Settings → Access Tokens.
 The admin dashboard uses the same CTFd access-token flow as the user dashboard, but Whaley additionally checks the CTFd user role:
 
 1. The browser sends `Authorization: Bearer <token>` to `/admin/api/me`.
-2. Whaley calls CTFd `/api/v1/users/me` with that token.
-3. Admin access is granted only when the CTFd response has `type: "admin"`.
+2. Whaley calls CTFd `/api/v1/users/me` with that token and reads the authenticated user's `id`.
+3. Whaley calls CTFd `/api/v1/users/{id}` with the same token.
+4. Admin access is granted only when that detailed CTFd user response has `type: "admin"`.
 
 Regular CTFd users can still use the challenge dashboard, but admin endpoints return HTTP 403. The user dashboard shows the **Admin Panel** link only when the authenticated CTFd user is an admin.
 
