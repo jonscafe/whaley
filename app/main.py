@@ -18,6 +18,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 
+from .challenge_files import (
+    CONFIG_FILENAMES,
+    COMPOSE_FILENAMES,
+    find_challenge_root,
+    get_challenge_compose_path,
+    get_challenge_config_path,
+)
 from .config import settings, Settings
 from .models import (
     UserInfo, SpawnRequest, SpawnResponse, 
@@ -1563,9 +1570,9 @@ def is_editable_text_file(path: Path) -> bool:
 
 
 def get_challenge_config_id(challenge_dir: Path) -> str:
-    """Read a challenge ID from challenge.yaml, falling back to the folder name."""
-    config_file = challenge_dir / "challenge.yaml"
-    if not config_file.exists():
+    """Read a challenge ID from challenge.yaml/challenge.yml, falling back to the folder name."""
+    config_file = get_challenge_config_path(challenge_dir)
+    if not config_file:
         return challenge_dir.name
 
     try:
@@ -1594,9 +1601,10 @@ def resolve_challenge_dir(challenge_ref: str) -> Tuple[Path, str]:
     if challenges_path.exists():
         for item in challenges_path.iterdir():
             if item.is_dir() and not item.is_symlink():
-                config_id = get_challenge_config_id(item)
-                if config_id == challenge_ref and is_safe_path(challenges_path, item):
-                    return item, config_id
+                challenge_dir = find_challenge_root(item) or item
+                config_id = get_challenge_config_id(challenge_dir)
+                if config_id == challenge_ref and is_safe_path(challenges_path, challenge_dir):
+                    return challenge_dir, config_id
 
     # Fall back to folder name for unloaded or invalid challenges.
     challenge_dir = challenges_path / challenge_ref
@@ -1605,7 +1613,8 @@ def resolve_challenge_dir(challenge_ref: str) -> Tuple[Path, str]:
     if not challenge_dir.exists() or not challenge_dir.is_dir():
         raise HTTPException(status_code=404, detail="Challenge not found")
 
-    return challenge_dir, get_challenge_config_id(challenge_dir)
+    actual_challenge_dir = find_challenge_root(challenge_dir) or challenge_dir
+    return actual_challenge_dir, get_challenge_config_id(actual_challenge_dir)
 
 
 def get_file_tree(directory: Path, base_path: Path) -> List[dict]:
@@ -1646,19 +1655,19 @@ async def admin_list_challenges(_: bool = Depends(verify_admin_key)):
     if challenges_path.exists():
         for item in challenges_path.iterdir():
             if item.is_dir() and not item.is_symlink():
-                config_file = item / "challenge.yaml"
-                compose_yaml = item / "docker-compose.yaml"
-                compose_yml = item / "docker-compose.yml"
-                
-                has_config = config_file.exists()
-                has_compose = compose_yaml.exists() or compose_yml.exists()
-                config_id = get_challenge_config_id(item)
+                challenge_dir = find_challenge_root(item) or item
+                config_file = get_challenge_config_path(challenge_dir)
+                compose_file = get_challenge_compose_path(challenge_dir)
+
+                has_config = config_file is not None
+                has_compose = compose_file is not None
+                config_id = get_challenge_config_id(challenge_dir)
                 is_loaded = config_id in loaded_ids
                 
                 challenges.append({
                     "id": config_id,
                     "folder": item.name,
-                    "path": str(item),
+                    "path": str(challenge_dir),
                     "has_config": has_config,
                     "has_compose": has_compose,
                     "loaded": is_loaded,
@@ -1747,17 +1756,23 @@ async def admin_upload_challenge(
             with zipfile.ZipFile(tmp_path, 'r') as zip_ref:
                 zip_ref.extractall(tmp_dir)
 
-            ensure_no_symlinks(Path(tmp_dir))
-            
-            # Find the root directory (handle nested zips)
-            extracted_items = list(Path(tmp_dir).iterdir())
-            if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                source_dir = extracted_items[0]
-                challenge_name = source_dir.name
-            else:
-                # Use zip filename as challenge name
+            extracted_root = Path(tmp_dir)
+            ensure_no_symlinks(extracted_root)
+
+            source_dir = find_challenge_root(extracted_root)
+            if not source_dir:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Uploaded zip must contain exactly one challenge root with "
+                        f"{'/'.join(CONFIG_FILENAMES)} and {'/'.join(COMPOSE_FILENAMES)}"
+                    )
+                )
+
+            if source_dir == extracted_root:
                 challenge_name = file.filename.rsplit('.', 1)[0]
-                source_dir = Path(tmp_dir)
+            else:
+                challenge_name = source_dir.name
             
             # Sanitize challenge name
             challenge_name = "".join(c for c in challenge_name if c.isalnum() or c in '-_').lower()
@@ -1780,6 +1795,7 @@ async def admin_upload_challenge(
         
         # Reload challenges
         docker_manager.load_challenges()
+        await docker_manager.load_challenge_settings()
         uploaded_id = get_challenge_config_id(target_dir)
         
         logger = get_event_logger()
@@ -1813,6 +1829,11 @@ async def admin_delete_challenge(
 ):
     """Delete a challenge directory."""
     challenge_dir, canonical_id = resolve_challenge_dir(challenge_id)
+    challenges_path = Path(settings.CHALLENGES_DIR)
+    try:
+        storage_dir = challenges_path / challenge_dir.relative_to(challenges_path).parts[0]
+    except (ValueError, IndexError):
+        storage_dir = challenge_dir
 
     if any(i.challenge_id == canonical_id for i in docker_manager.instances.values()):
         raise HTTPException(
@@ -1821,14 +1842,15 @@ async def admin_delete_challenge(
         )
     
     try:
-        shutil.rmtree(challenge_dir)
+        shutil.rmtree(storage_dir)
         docker_manager.load_challenges()  # Reload
+        await docker_manager.load_challenge_settings()
         
         logger = get_event_logger()
         await logger.log(
             EventType.SYSTEM_STOP,
             f"Challenge deleted: {canonical_id}",
-            details={"challenge_id": canonical_id, "folder": challenge_dir.name}
+            details={"challenge_id": canonical_id, "folder": storage_dir.name}
         )
         
         return {"success": True, "message": f"Challenge '{canonical_id}' deleted"}
@@ -2006,7 +2028,7 @@ async def admin_reload_challenge(
     else:
         return {
             "success": False,
-            "message": f"Challenge '{canonical_id}' failed to load (check challenge.yaml)"
+            "message": f"Challenge '{canonical_id}' failed to load (check challenge.yaml or challenge.yml)"
         }
 
 

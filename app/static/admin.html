@@ -1782,12 +1782,16 @@
         }
 
         function jsArg(value) {
-            return JSON.stringify(String(value))
-                .replace(/</g, '\\u003c')
-                .replace(/>/g, '\\u003e')
-                .replace(/&/g, '\\u0026')
+            return `'${String(value)
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/\r/g, '\\r')
+                .replace(/\n/g, '\\n')
+                .replace(/</g, '\\x3c')
+                .replace(/>/g, '\\x3e')
+                .replace(/&/g, '\\x26')
                 .replace(/\u2028/g, '\\u2028')
-                .replace(/\u2029/g, '\\u2029');
+                .replace(/\u2029/g, '\\u2029')}'`;
         }
 
         function encodePathParts(path) {
@@ -3597,10 +3601,10 @@
                     let statusColor = 'var(--accent-warning)';
 
                     if (!ch.has_config) {
-                        status = '❌ Missing challenge.yaml';
+                        status = '❌ Missing challenge.yaml/challenge.yml';
                         statusColor = 'var(--accent-danger)';
                     } else if (!ch.has_compose) {
-                        status = '❌ Missing docker-compose.yaml';
+                        status = '❌ Missing docker-compose.yaml/docker-compose.yml';
                         statusColor = 'var(--accent-danger)';
                     } else if (ch.loaded) {
                         status = '✅ Loaded';
@@ -3679,7 +3683,7 @@
                 if (response.ok && data.success) {
                     showToast(data.message, 'success');
                     await loadChallengesList();
-                    selectChallenge(data.folder || data.challenge_id, data.challenge_id || data.folder);
+                    await selectChallenge(data.folder || data.challenge_id, data.challenge_id || data.folder);
                 } else {
                     showToast(data.detail || data.message || 'Upload failed', 'error');
                 }
@@ -3864,8 +3868,9 @@
                             </button>
                         </div>
                     </div>
-                    <textarea class="file-editor" id="file-content" onchange="unsavedChanges=true" oninput="unsavedChanges=true">${escapeHtml(data.content)}</textarea>
+                    <textarea class="file-editor" id="file-content" onchange="unsavedChanges=true" oninput="unsavedChanges=true"></textarea>
                 `;
+                document.getElementById('file-content').value = data.content || '';
 
             } catch (error) {
                 showToast('Failed to open file', 'error');

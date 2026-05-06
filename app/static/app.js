@@ -297,7 +297,7 @@ async function loadChallenges() {
                     <span>🔌 ${challenge.ports.length} port${challenge.ports.length !== 1 ? 's' : ''}</span>
                 </div>
                 <div class="challenge-actions">
-                    <button class="btn btn-primary" onclick="spawnInstance(${jsArg(challenge.id)})">
+                    <button class="btn btn-primary" onclick="spawnInstance(${jsArg(challenge.id)}, this)">
                         <span class="btn-icon">🚀</span> Spawn
                     </button>
                 </div>
@@ -426,10 +426,14 @@ async function loadInstances() {
 }
 
 // Spawn Instance
-async function spawnInstance(challengeId) {
-    const btn = event.target.closest('button');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="btn-icon">⏳</span> Spawning...';
+async function spawnInstance(challengeId, buttonEl = null) {
+    const btn = buttonEl instanceof HTMLElement ? buttonEl : null;
+    const originalHtml = btn ? btn.innerHTML : null;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-icon">⏳</span> Spawning...';
+    }
     
     try {
         const data = await api('/instances/spawn', {
@@ -457,8 +461,10 @@ async function spawnInstance(challengeId) {
     } catch (error) {
         showToast(error.message || 'Failed to spawn instance', 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<span class="btn-icon">🚀</span> Spawn';
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml || '<span class="btn-icon">🚀</span> Spawn';
+        }
     }
 }
 
@@ -592,12 +598,16 @@ function escapeHtml(text) {
 }
 
 function jsArg(value) {
-    return JSON.stringify(String(value))
-        .replace(/</g, '\\u003c')
-        .replace(/>/g, '\\u003e')
-        .replace(/&/g, '\\u0026')
+    return `'${String(value)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\r/g, '\\r')
+        .replace(/\n/g, '\\n')
+        .replace(/</g, '\\x3c')
+        .replace(/>/g, '\\x3e')
+        .replace(/&/g, '\\x26')
         .replace(/\u2028/g, '\\u2028')
-        .replace(/\u2029/g, '\\u2029');
+        .replace(/\u2029/g, '\\u2029')}'`;
 }
 
 function copyToClipboard(text) {

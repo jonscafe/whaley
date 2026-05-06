@@ -11,6 +11,11 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 from .config import settings
+from .challenge_files import (
+    find_challenge_root,
+    get_challenge_compose_path,
+    get_challenge_config_path,
+)
 from .models import (
     ChallengeInfo, ChallengeType, Instance, InstanceStatus, UserInfo, utcnow
 )
@@ -32,29 +37,17 @@ class ChallengeConfig:
     
     def __init__(self, challenge_dir: Path):
         self.path = challenge_dir
-        self.config_file = challenge_dir / "challenge.yaml"
-        # Support both .yaml and .yml extensions
-        self.compose_file = self._find_compose_file(challenge_dir)
+        self.config_file = get_challenge_config_path(challenge_dir)
+        self.compose_file = get_challenge_compose_path(challenge_dir)
         self._config: Dict = {}
         self._load_config()
     
-    def _find_compose_file(self, challenge_dir: Path) -> Path:
-        """Find docker-compose file with either .yaml or .yml extension."""
-        yaml_file = challenge_dir / "docker-compose.yaml"
-        yml_file = challenge_dir / "docker-compose.yml"
-        
-        if yaml_file.exists():
-            return yaml_file
-        elif yml_file.exists():
-            return yml_file
-        else:
-            # Return default path (will fail validation later)
-            return yaml_file
-    
     def _load_config(self) -> None:
         """Load challenge configuration."""
-        if not self.config_file.exists():
-            raise ValueError(f"Challenge config not found: {self.config_file}")
+        if not self.config_file:
+            raise ValueError(f"Challenge config not found in: {self.path}")
+        if not self.compose_file:
+            raise ValueError(f"Docker compose file not found in: {self.path}")
         
         with open(self.config_file) as f:
             self._config = yaml.safe_load(f)
@@ -151,19 +144,15 @@ class DockerManager:
         
         for item in challenges_path.iterdir():
             if item.is_dir() and not item.is_symlink():
-                config_file = item / "challenge.yaml"
-                # Support both .yaml and .yml extensions
-                compose_yaml = item / "docker-compose.yaml"
-                compose_yml = item / "docker-compose.yml"
-                has_compose = compose_yaml.exists() or compose_yml.exists()
-                
-                if config_file.exists() and has_compose:
+                challenge_root = find_challenge_root(item)
+
+                if challenge_root:
                     try:
-                        config = ChallengeConfig(item)
+                        config = ChallengeConfig(challenge_root)
                         self.challenges[config.id] = config
                         print(f"Loaded challenge: {config.name} ({config.id})")
                     except Exception as e:
-                        print(f"Failed to load challenge from {item}: {e}")
+                        print(f"Failed to load challenge from {challenge_root}: {e}")
     
     def get_challenges(self) -> List[ChallengeInfo]:
         """Get list of all challenges (including inactive, for admin)."""
