@@ -1678,6 +1678,7 @@
         let currentTab = 'dashboard';
         let debounceTimer = null;
         let selectedChallenge = null;
+        let selectedChallengeLabel = null;
         let selectedFile = null;
         let unsavedChanges = false;
 
@@ -3590,6 +3591,8 @@
                 }
 
                 container.innerHTML = challenges.map(ch => {
+                    const challengeRef = ch.folder || ch.id;
+                    const challengeLabel = ch.id || ch.folder;
                     let status = '';
                     let statusColor = 'var(--accent-warning)';
 
@@ -3610,12 +3613,14 @@
                     const cs = challengeSettingsCache[ch.id] || {};
                     const isActive = cs.is_active !== false; // default active
                     const inactiveClass = isActive ? '' : 'inactive';
-                    const challengeArg = jsArg(ch.id);
+                    const challengeArg = jsArg(challengeRef);
+                    const challengeLabelArg = jsArg(challengeLabel);
 
                     return `
-                        <div class="challenge-admin-card ${selectedChallenge === ch.id ? 'selected' : ''} ${inactiveClass}" data-id="${escapeHtml(ch.id)}">
+                        <div class="challenge-admin-card ${selectedChallenge === challengeRef ? 'selected' : ''} ${inactiveClass}" data-id="${escapeHtml(challengeRef)}">
                             <div>
                                 <strong>${escapeHtml(ch.id)}</strong>
+                                ${ch.folder && ch.folder !== ch.id ? `<span style="margin-left: 8px; font-size: 0.75rem; color: var(--text-muted);">folder: ${escapeHtml(ch.folder)}</span>` : ''}
                                 <span style="margin-left: 10px; font-size: 0.8rem; color: ${statusColor}">
                                     ${status}
                                 </span>
@@ -3626,7 +3631,7 @@
                                     <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleChallenge(${challengeArg}, this.checked)">
                                     <span class="toggle-slider"></span>
                                 </label>
-                                <button class="btn btn-primary btn-sm" onclick="selectChallenge(${challengeArg})">
+                                <button class="btn btn-primary btn-sm" onclick="selectChallenge(${challengeArg}, ${challengeLabelArg})">
                                     📝 Edit Files
                                 </button>
                                 <button class="btn btn-secondary btn-sm" onclick="reloadChallenge(${challengeArg})">
@@ -3674,7 +3679,7 @@
                 if (response.ok && data.success) {
                     showToast(data.message, 'success');
                     await loadChallengesList();
-                    selectChallenge(data.challenge_id);
+                    selectChallenge(data.folder || data.challenge_id, data.challenge_id || data.folder);
                 } else {
                     showToast(data.detail || data.message || 'Upload failed', 'error');
                 }
@@ -3699,6 +3704,7 @@
                     showToast('Challenge deleted', 'success');
                     if (selectedChallenge === challengeId) {
                         selectedChallenge = null;
+                        selectedChallengeLabel = null;
                         document.getElementById('file-browser-section').classList.add('hidden');
                     }
                     await loadChallengesList();
@@ -3731,6 +3737,7 @@
             }
 
             selectedChallenge = null;
+            selectedChallengeLabel = null;
             selectedFile = null;
             unsavedChanges = false;
 
@@ -3742,16 +3749,17 @@
             });
         }
 
-        async function selectChallenge(challengeId) {
+        async function selectChallenge(challengeId, challengeLabel = null) {
             if (unsavedChanges && !confirm('You have unsaved changes. Discard them?')) {
                 return;
             }
 
             selectedChallenge = challengeId;
+            selectedChallengeLabel = challengeLabel || challengeId;
             selectedFile = null;
             unsavedChanges = false;
 
-            document.getElementById('selected-challenge-name').textContent = challengeId;
+            document.getElementById('selected-challenge-name').textContent = selectedChallengeLabel;
             document.getElementById('file-browser-section').classList.remove('hidden');
             document.getElementById('new-file-path').value = '';
 
