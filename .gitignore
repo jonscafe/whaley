@@ -75,3 +75,7 @@ data/
 
 # Chall dir
 challenges/*
+
+# Stress tests
+"whaley-stress.json" 
+"stress-test-state.json" 

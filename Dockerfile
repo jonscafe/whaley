@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 # Install Docker CLI and docker-compose plugin
 RUN apt-get update && apt-get install -y \
+    iptables \
     ca-certificates \
     curl \
     gnupg \
+    tcpdump \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
     && chmod a+r /etc/apt/keyrings/docker.gpg \

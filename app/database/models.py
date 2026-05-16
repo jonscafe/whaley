@@ -105,3 +105,90 @@ class InstanceState(Base):
     
     def __repr__(self):
         return f"<InstanceState(id={self.instance_id}, status={self.status})>"
+
+
+class FirewallRuleState(Base):
+    """Tracked host firewall rules managed by Whaley."""
+    __tablename__ = "firewall_rule_states"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    instance_id = Column(String(128), nullable=False, index=True)
+    challenge_id = Column(String(128), nullable=True, index=True)
+    owner_id = Column(String(64), nullable=True, index=True)
+    port = Column(Integer, nullable=False, index=True)
+    backend = Column(String(32), nullable=False)
+    chain = Column(String(128), nullable=False)
+    rule_kind = Column(String(32), nullable=False)
+    rule_args = Column(JSON, nullable=False)
+    comment = Column(String(255), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="active")
+    last_error = Column(Text, nullable=True)
+    applied_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_firewall_instance_status', 'instance_id', 'status'),
+        Index('uq_firewall_instance_port_kind', 'instance_id', 'port', 'rule_kind', unique=True),
+    )
+
+    def __repr__(self):
+        return f"<FirewallRuleState(instance={self.instance_id}, port={self.port}, kind={self.rule_kind})>"
+
+
+class FlagMappingModel(Base):
+    """Dynamic flag assigned to a user/team for a challenge."""
+    __tablename__ = "flag_mappings"
+
+    flag_id = Column(Integer, primary_key=True, autoincrement=False)
+    ctfd_challenge_id = Column(Integer, nullable=False)
+    local_challenge_id = Column(String(128), nullable=False, index=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    username = Column(String(255), nullable=True)
+    flag_content = Column(String(512), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    instance_id = Column(String(128), nullable=True)
+    team_id = Column(String(64), nullable=True, index=True)
+    team_name = Column(String(255), nullable=True)
+    owner_id = Column(String(64), nullable=True, index=True)
+
+    __table_args__ = (
+        Index('ix_flag_owner_challenge', 'owner_id', 'local_challenge_id'),
+        Index('ix_flag_user_challenge', 'user_id', 'local_challenge_id'),
+        Index('uq_flag_owner_challenge', 'owner_id', 'local_challenge_id', unique=True),
+        Index('uq_flag_content', 'flag_content', unique=True),
+    )
+
+    def __repr__(self):
+        return f"<FlagMapping(flag_id={self.flag_id}, owner={self.owner_id}, challenge={self.local_challenge_id})>"
+
+
+class SuspiciousSubmissionModel(Base):
+    """Recorded suspicious submission (flag sharing attempt)."""
+    __tablename__ = "suspicious_submissions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    submission_id = Column(Integer, nullable=False)
+    submitter_user_id = Column(Integer, nullable=False)
+    submitter_username = Column(String(255), nullable=True)
+    flag_owner_user_id = Column(String(64), nullable=False)
+    flag_owner_username = Column(String(255), nullable=True)
+    challenge_id = Column(Integer, nullable=False)
+    local_challenge_id = Column(String(128), nullable=False, index=True)
+    provided_flag = Column(String(512), nullable=True)
+    submission_time = Column(String(64), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    submitter_team_id = Column(String(64), nullable=True)
+    submitter_team_name = Column(String(255), nullable=True)
+    flag_owner_team_id = Column(String(64), nullable=True)
+    flag_owner_team_name = Column(String(255), nullable=True)
+    unique_key = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_suspicious_submission_id', 'submission_id'),
+        Index('uq_suspicious_unique_key', 'unique_key', unique=True),
+    )
+
+    def __repr__(self):
+        key = self.unique_key[:12] if self.unique_key else None
+        return f"<SuspiciousSubmission(id={self.id}, submitter={self.submitter_username}, key={key})>"

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,8 +9,11 @@
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
 </head>
+
 <body>
     <div class="container">
         <!-- Header -->
@@ -33,18 +37,21 @@
                 <h2>🔐 Authentication Required</h2>
             </div>
             <div class="card-body">
-                <p class="auth-description">Enter your CTFd access token to continue. You can get your token from CTFd → Settings → Access Tokens.</p>
+                <p class="auth-description">Enter your CTFd access token to continue. You can get your token from CTFd →
+                    Settings → Access Tokens.</p>
                 <div class="auth-form">
                     <div class="input-group">
                         <label for="ctfd-token">CTFd Access Token</label>
-                        <input type="password" id="ctfd-token" placeholder="ctfd_xxxxxxxxxxxx..." autocomplete="off" onkeypress="if(event.key==='Enter')authenticate()">
+                        <input type="password" id="ctfd-token" placeholder="ctfd_xxxxxxxxxxxx..." autocomplete="off"
+                            onkeypress="if(event.key==='Enter')authenticate()">
                     </div>
                     <button class="btn btn-primary" onclick="authenticate()">
                         <span class="btn-icon">🔑</span> Login
                     </button>
                 </div>
                 <p class="auth-hint">
-                    <a href="https://ctf.korpstar-poltekssn.org/settings#tokens" target="_blank" rel="noopener">Get your access token here →</a>
+                    <a href="https://ctf.korpstar-poltekssn.org/settings#tokens" target="_blank" rel="noopener">Get your
+                        access token here →</a>
                 </p>
             </div>
         </section>
@@ -75,11 +82,12 @@
                         </div>
                         <div class="info-item">
                             <span class="label" id="instances-label">Instances</span>
-                            <span class="value" id="user-instances">0 / 3</span>
+                            <span class="value" id="user-instances">0 / 2</span>
                         </div>
                     </div>
                     <!-- Team Members Section (shown in team mode) -->
-                    <div id="team-members" class="hidden" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+                    <div id="team-members" class="hidden"
+                        style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
                         <!-- Team members will be inserted here by JS -->
                     </div>
                 </div>
@@ -123,7 +131,8 @@
         <!-- Footer -->
         <footer class="footer">
             <p>🐳 Whaley Instance Manager</p>
-            <p class="footer-credit">Made with ❤️ by <a href="https://github.com/jonscafe" target="_blank" rel="noopener">keii</a></p>
+            <p class="footer-credit">Made with 🤖 by <a href="https://github.com/jonscafe/whaley" target="_blank"
+                    rel="noopener">keii</a></p>
         </footer>
     </div>
 
@@ -146,4 +155,5 @@
 
     <script src="/static/app.js"></script>
 </body>
+
 </html>

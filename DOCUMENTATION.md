@@ -16,7 +16,9 @@ Complete documentation for the CTF Docker Instancer.
 - [Development](#-development)
 - [Production Infrastructure](#-production-infrastructure)
 - [Capacity Planning](#-capacity-planning--server-requirements)
+- [Stress Testing](#-stress-testing)
 - [Instance Forensics](#-instance-forensics-docker-log-capture)
+- [Native Packet Capture](#-native-packet-capture)
 - [Resource Monitoring](#-resource-monitoring)
 - [Security](#-security)
 - [Environment Variables](#-environment-variables)
@@ -108,8 +110,25 @@ python -m uvicorn app.main:app --reload
 | `CHALLENGES_DIR` | `./challenges` | Directory containing challenge definitions |
 | `ADMIN_KEY` | - | Local admin dashboard key used when `AUTH_MODE=none` |
 | `CTFD_API_KEY` | - | CTFd admin API key for dynamic flags, sync wizard, and team-mode detection |
+| `METRICS_SECRET` | - | Enables protected Prometheus `/metrics` endpoint when set |
+| `FIREWALL_RATE_LIMIT_ENABLED` | `false` | Enable host-level per-instance connlimit/hashlimit rules on published ports |
+| `FIREWALL_BACKEND` | `iptables` | Host firewall backend (`iptables` currently supported) |
+| `FIREWALL_CHAIN` | `DOCKER-USER` | Firewall chain Whaley manages for published-port protection |
+| `FIREWALL_CONN_LIMIT_PER_IP` | `60` | Max concurrent TCP connections per source IP per published port |
+| `FIREWALL_RATE_PER_MINUTE` | `120` | Max new TCP connections per minute per source IP per published port |
+| `FIREWALL_RATE_BURST` | `240` | Burst allowance for the per-IP new connection limit |
+| `FIREWALL_REJECT_MODE` | `reject` | `reject` sends TCP reset; `drop` silently discards |
+| `FIREWALL_STRICT` | `false` | Fail spawn if firewall rule apply fails instead of running degraded |
+| `FIREWALL_USE_NSENTER` | `false` | Run firewall commands via `nsenter -t 1 -n` to reach host netns |
 | `DYNAMIC_FLAGS_ENABLED` | `false` | Enable per-user dynamic flags |
 | `FLAG_PREFIX` | `FLAG` | Prefix for generated flags (e.g., `FLAG{...}`) |
+| `PCAP_ENABLED` | `true` | Enable tcpdump sidecars for new instance spawns |
+| `PCAP_MODE` | `all` | Packet-capture policy: `all`, `selected`, or `none` |
+| `PCAP_SELECTED_CHALLENGES` | - | Comma-separated challenge IDs used when `PCAP_MODE=selected` |
+| `PCAP_MAX_SIZE_MB` | `25` | Rotate PCAP files after they reach this size |
+| `PCAP_RETENTION_HOURS` | `24` | Automatically delete old captures after this many hours |
+| `PCAP_SNAP_LEN` | `1024` | Capture snap length in bytes |
+| `PCAP_BPF_FILTER` | `not (host 127.0.0.11 and port 53)` | Default filter that trims Docker DNS noise |
 | `LOG_FILE` | `logs/events.jsonl` | Path to event log file |
 | `DEBUG` | `false` | Enable debug mode |
 | `ADMIN_RATE_LIMIT` | `150` | Admin API requests allowed per minute per client IP |
@@ -207,7 +226,7 @@ services:
 
 Whaley starts each instance from a per-instance copy of the challenge directory. This keeps dynamic flag injection, resource-limit rewrites, and bind-mounted challenge files stable until the instance is stopped.
 
-Whaley also validates compose files before startup and rejects options that would bypass isolation, including `privileged`, `network_mode`, host/container namespaces, added capabilities/devices, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, absolute/home/environment-expanded bind sources, and bind paths containing `..`.
+Whaley also validates compose files before startup and rejects options that would bypass isolation, including `privileged`, `network_mode`, host/container namespaces, added capabilities/devices, unsafe security options, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, absolute/home/environment-expanded bind sources, and bind paths containing `..`. The hardening-safe `security_opt: ["no-new-privileges:true"]` option is allowed.
 
 ### Tips for Challenge Authors
 
@@ -229,6 +248,7 @@ Whaley also validates compose files before startup and rejects options that woul
 | `/` | GET | Web UI (user interface) |
 | `/api` | GET | API info |
 | `/health` | GET | Detailed health status |
+| `/metrics` | GET | Prometheus metrics when `METRICS_SECRET` is configured |
 
 ### Challenges
 
@@ -270,7 +290,35 @@ All admin endpoints are also rate-limited by client IP using `ADMIN_RATE_LIMIT`.
 | `/admin/api/me` | GET | Verify admin auth and return the authenticated admin user |
 | `/admin/api/stats` | GET | Get system statistics |
 | `/admin/api/instances` | GET | List all active instances |
+| `/admin/api/instances/spawn` | POST | Manually spawn an instance for a user/team owner |
+| `/admin/api/instances/{id}` | GET | Get one instance with admin metadata |
+| `/admin/api/instances/{id}` | DELETE | Force-stop/destroy an instance |
+| `/admin/api/instances/{id}/logs` | GET | Get live Docker logs for an instance |
+| `/admin/api/instances/{id}/metrics` | GET | Get live per-instance resource metrics |
+| `/admin/api/monitoring/system` | GET | Get host snapshot and optional aggregate container stats |
+| `/admin/api/monitoring/instances` | GET | Get paginated instance inventory; Docker metrics are opt-in per page |
+| `/admin/api/firewall/status` | GET | Get global host firewall/rate-limit status |
+| `/admin/api/firewall/instances/{id}` | GET | Get tracked firewall rules for one instance |
+| `/admin/api/firewall/cleanup` | POST | Remove stale tracked firewall rules for dead instances |
+| `/admin/api/firewall/reapply/{id}` | POST | Re-apply firewall rules for one active instance |
 | `/admin/api/logs` | GET | Get event logs (with filtering) |
+
+### Packet Capture (requires admin auth)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/api/pcap/status` | GET | Get capture status, parser availability, and storage totals |
+| `/admin/api/pcap/policy` | GET | Get packet-capture mode and selected challenges |
+| `/admin/api/pcap/policy` | PUT | Update packet-capture mode and selected challenges |
+| `/admin/api/pcap/toggle` | POST | Enable or disable packet capture for new spawns |
+| `/admin/api/pcap/instances` | GET | List instances that have capture files |
+| `/admin/api/pcap/instances/{id}/summary` | GET | Get parsed summary for one instance |
+| `/admin/api/pcap/instances/{id}/flows` | GET | List parsed flows with protocol and flag filters |
+| `/admin/api/pcap/instances/{id}/flows/{flow_id}` | GET | Get packet-by-packet detail for one flow |
+| `/admin/api/pcap/instances/{id}/flows/{flow_id}/payload` | GET | Get follow-stream style payload output |
+| `/admin/api/pcap/instances/{id}/search` | GET | Search flow payloads for text or hex content |
+| `/admin/api/pcap/instances/{id}/download` | GET | Download raw `.pcap` files for one instance |
+| `/admin/api/pcap/cleanup` | POST | Delete capture directories older than retention |
 
 ### Challenge Management (requires admin auth)
 
@@ -297,6 +345,75 @@ All admin endpoints are also rate-limited by client IP using `ADMIN_RATE_LIMIT`.
 | `/admin/api/flags/user/{user_id}` | DELETE | Delete all flags for a user |
 | `/admin/api/flags/{flag_id}` | DELETE | Delete a specific flag mapping |
 | `/admin/api/ctfd/challenges` | GET | Fetch CTFd challenges with mapping suggestions |
+
+### Prometheus Metrics
+
+Whaley exposes a Prometheus-compatible `/metrics` endpoint when `METRICS_SECRET` is configured. The endpoint is disabled with HTTP 503 when the secret is empty.
+
+Authenticate with either header:
+
+```bash
+curl -H "Authorization: Bearer $METRICS_SECRET" \
+  http://localhost:8000/metrics
+
+curl -H "X-Metrics-Secret: $METRICS_SECRET" \
+  http://localhost:8000/metrics
+```
+
+The exposition includes instance counts by status/owner/team/challenge, per-instance age and expiry gauges, port pool usage, loaded/active challenge counts, dynamic flag counts, suspicious submission totals, forensics storage totals, packet-capture storage totals, and event log counters.
+
+### Admin Instance Operations
+
+Manual spawn request:
+
+```bash
+curl -X POST "http://localhost:8000/admin/api/instances/spawn" \
+  -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "challenge_id": "example-web",
+    "user_id": "admin-manual",
+    "username": "admin"
+  }'
+```
+
+Team-owner spawn request:
+
+```bash
+curl -X POST "http://localhost:8000/admin/api/instances/spawn" \
+  -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "challenge_id": "example-web",
+    "user_id": "42",
+    "username": "alice",
+    "team_id": "7",
+    "team_name": "Blue Team",
+    "team_mode": true
+  }'
+```
+
+Inspect and destroy:
+
+```bash
+# Instance metadata and status
+curl -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
+  "http://localhost:8000/admin/api/instances/{instance_id}"
+
+# Live Docker logs, combined across containers
+curl -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
+  "http://localhost:8000/admin/api/instances/{instance_id}/logs?tail=300"
+
+# Live CPU/RAM/network/block IO/PID metrics
+curl -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
+  "http://localhost:8000/admin/api/instances/{instance_id}/metrics"
+
+# Force-stop/destroy
+curl -X DELETE -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
+  "http://localhost:8000/admin/api/instances/{instance_id}"
+```
+
+Failed admin spawn/stop operations return HTTP 400/404 with the backend error message in `detail`, so the dashboard can show Docker, compose, port allocation, and cleanup failures directly.
 
 #### CTFd Sync Wizard API
 
@@ -473,8 +590,11 @@ Authentication follows the admin API rules:
 The admin dashboard has these tabs:
 
 ### 1. Dashboard
-- 📈 **Statistics** - Total spawns, active instances, unique users
-- 🖥️ **Active Instances** - View all running instances with force-stop capability
+- 📈 **Statistics** - Total spawns, active instances, unique users, and instance status counts
+- 🛠️ **Manual Instance Control** - Spawn a challenge as a chosen user or team owner
+- 🖥️ **Active Instances** - View all running/starting/error instances with force-stop capability
+- 📜 **Per-Instance Logs** - Open live Docker logs from the instance card
+- 📈 **Per-Instance Metrics** - Inspect CPU, RAM, network I/O, block I/O, and PID usage
 
 ### 2. Event Logs
 - 📋 **Filterable Logs** - Filter by event type, username, limit
@@ -491,12 +611,24 @@ The admin dashboard has these tabs:
 - 📁 **File Browser** - Browse and edit challenge files
 - 🔄 **Reload Config** - Apply changes to challenge.yaml
 
-### 5. Monitoring
-- 🔍 **System Metrics** - View host/container CPU and memory usage
-- 📦 **Per-Instance Metrics** - Identify heavy instances and containers
+### 5. Packet Capture
+- 📡 **Capture Status** - Toggle packet capture for future spawns and track storage usage
+- 📚 **Paginated Capture List** - Browse many captured instances without parsing every PCAP at tab load
+- 🔎 **Flow Explorer** - Filter/search flows by protocol, flag tags, and payload content
+- 💾 **Raw PCAP Download** - Export rotated `.pcap` files for offline Wireshark analysis
+- 🧹 **Retention Cleanup** - Manually prune captures older than the configured retention window
 
-### 6. Settings
+### 6. Monitoring
+- 🔍 **Host Snapshot** - View host load, memory, disk usage, and tracked container counts without sweeping Docker stats
+- 📦 **Per-Instance Inventory** - Browse paginated active instances without freezing the dashboard
+- 🎯 **Sample Page Metrics** - Collect Docker CPU/RAM only for the current monitoring page when you need detail
+- 🛡 **Firewall Status** - Inspect connlimit/hashlimit policy, stale rule count, and per-instance rule state
+- 📡 **Prometheus Export** - Use `/metrics` with `METRICS_SECRET` for external scraping
+
+### 7. Settings
 - ⚙️ **Live Settings** - Update editable Whaley settings without restarting the service
+
+Admin actions surface backend error messages in the UI. If a manual spawn fails because compose build failed, no ports are available, Docker is unreachable, firewall rule apply fails, or cleanup only partially succeeded, the dashboard shows the returned reason instead of a generic failure toast.
 
 **Log Format (JSONL):**
 ```json
@@ -579,6 +711,9 @@ whaley/
 │   ├── docker_manager.py    # Docker/compose management
 │   ├── docker_client.py     # Docker SDK wrapper
 │   ├── port_manager.py      # Port allocation
+│   ├── flag_manager.py      # Dynamic flags and suspicious submissions
+│   ├── forensics.py         # Instance log capture
+│   ├── monitoring.py        # Container/system metrics
 │   ├── logger.py            # Event logging
 │   ├── distributed_lock.py  # Redis-based distributed locking
 │   ├── database/            # Database layer
@@ -662,6 +797,8 @@ DATABASE_URL=postgresql+asyncpg://user:pass@db:5432/whaley
 
 Prevents race conditions when running multiple Gunicorn workers. Spawn checks, persistent port assignment, and Docker Compose startup are protected by locks; with Redis enabled, Whaley holds a distributed port-allocation lock until compose startup has bound the selected ports.
 
+Spawn, stop, and extend operations also use per-instance lifecycle locks. This prevents a stop request from racing with a still-starting compose project, and prevents concurrent stop/extend requests from mutating the same instance state at the same time.
+
 | Without Redis | With Redis |
 |---------------|------------|
 | Single worker only | Multi-worker safe |
@@ -681,10 +818,12 @@ REDIS_URL=redis://redis:6379/0
 Native Docker API integration using `docker-py` library.
 
 **Benefits:**
-- ✅ No subprocess spawning (more secure)
+- ✅ Docker SDK for container, network, image, stats, and log operations
 - ✅ Better error handling with typed exceptions
 - ✅ Native container/network lifecycle management
-- ✅ Proper resource cleanup
+- ✅ Proper resource cleanup for containers, networks, volumes, and per-spawn images
+
+Whaley labels compose services and creates isolated networks with ownership metadata. On startup and during periodic cleanup, it removes stale Whaley compose projects, orphan networks, dangling volumes, and per-spawn build images while preserving currently tracked active projects.
 
 #### 4. Network Isolation
 
@@ -695,6 +834,7 @@ Each instance runs in its own isolated Docker bridge network.
 - 🛡️ Prevents lateral movement attacks between challenges
 - 🧪 Automatic network cleanup on instance termination
 - 🧱 Compose files are attached to the per-instance external network automatically
+- 🌐 Compose-defined challenge networks receive explicit Whaley-managed subnets
 
 **Configuration:**
 ```env
@@ -706,6 +846,10 @@ NETWORK_ICC_DISABLED=true
 
 # Network name prefix
 NETWORK_PREFIX=whaley
+
+# Address pool used for Whaley isolation networks and compose-created challenge networks
+NETWORK_SUBNET_BASE=10.240.0.0/16
+NETWORK_SUBNET_PREFIX=28
 ```
 
 ### Deployment Modes
@@ -745,8 +889,27 @@ services:
 | `NETWORK_ISOLATION_ENABLED` | `true` | Create isolated network per instance |
 | `NETWORK_ICC_DISABLED` | `true` | Disable inter-container communication |
 | `NETWORK_PREFIX` | `whaley` | Prefix for instance networks |
+| `NETWORK_SUBNET_BASE` | `10.240.0.0/16` | Whaley-managed address pool for per-instance isolation networks and compose-created challenge networks |
+| `NETWORK_SUBNET_PREFIX` | `28` | Prefix length allocated from `NETWORK_SUBNET_BASE` for each Docker bridge network |
 | `ADMIN_RATE_LIMIT` | `150` | Admin API requests allowed per minute per client IP |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1` | Trusted reverse proxies for forwarded client IP headers |
+| `METRICS_SECRET` | - | Secret required for Prometheus `/metrics`; empty disables endpoint |
+| `FIREWALL_RATE_LIMIT_ENABLED` | `false` | Enable host-level per-instance connlimit/hashlimit rules |
+| `FIREWALL_BACKEND` | `iptables` | Firewall backend managed by Whaley |
+| `FIREWALL_CHAIN` | `DOCKER-USER` | Chain used for challenge published-port protection |
+| `FIREWALL_CONN_LIMIT_PER_IP` | `60` | Max concurrent TCP connections per source IP per published port |
+| `FIREWALL_RATE_PER_MINUTE` | `120` | Max new TCP connections per minute per source IP per published port |
+| `FIREWALL_RATE_BURST` | `240` | Burst allowance for the new connection limiter |
+| `FIREWALL_REJECT_MODE` | `reject` | Reject with TCP reset or silently drop |
+| `FIREWALL_STRICT` | `false` | Fail spawns when firewall rule apply fails |
+| `FIREWALL_USE_NSENTER` | `false` | Execute firewall commands in the host netns via `nsenter` |
+| `PCAP_ENABLED` | `true` | Enable packet-capture sidecars for new instances |
+| `PCAP_MODE` | `all` | Packet-capture policy for future spawns |
+| `PCAP_SELECTED_CHALLENGES` | - | Comma-separated challenge IDs for selected-mode capture |
+| `PCAP_MAX_SIZE_MB` | `25` | Rotate packet-capture files when they reach this size |
+| `PCAP_RETENTION_HOURS` | `24` | Delete capture directories older than this many hours |
+| `PCAP_SNAP_LEN` | `1024` | Capture snap length in bytes |
+| `PCAP_BPF_FILTER` | `not (host 127.0.0.11 and port 53)` | Default filter for new captures |
 
 ## ⚠️ Capacity Planning & Server Requirements
 
@@ -756,11 +919,40 @@ Whaley's production infrastructure adds minimal overhead:
 
 | Component | RAM | CPU | Disk | Notes |
 |-----------|-----|-----|------|-------|
-| **Whaley App** | ~100 MB | 0.1-0.5 cores | - | FastAPI + uvicorn |
+| **Whaley App** | ~100 MB | 0.1-0.5 cores | — | FastAPI + uvicorn |
 | **Redis** | ~50 MB | 0.05 cores | ~10 MB | Distributed locking |
 | **SQLite DB** | ~5 MB | minimal | 1-50 MB | Grows with events |
-| **Network Isolation** | ~1 MB/network | minimal | - | Per-instance overhead |
-| **Total Overhead** | ~200 MB | ~0.5 cores | ~100 MB | Before any instances |
+| **Network Isolation** | ~1 MB/network | minimal | — | Per-instance bridge + iptables |
+| **PCAP Parser** | 50-200 MB peak | burst only | — | On-demand when admin views flows |
+| **Total Fixed Overhead** | **~200 MB** | **~0.5 cores** | **~60 MB** | Before any instances |
+
+### Per-Instance Resource Cost
+
+Each spawned instance consumes the following resources:
+
+| Component | RAM | CPU | Disk/hr | Notes |
+|-----------|-----|-----|---------|-------|
+| Challenge containers (avg) | 256 MB | 0.5 cores | — | Capped by `CONTAINER_MAX_MEMORY` |
+| tcpdump sidecar | ~5 MB | 0.02 cores | 5–25 MB | When `PCAP_ENABLED=true` |
+| Isolated network | ~1 MB | negligible | — | iptables rules + bridge veth |
+| Forensics log (on terminate) | — | — | ~30 KB | Compressed gzip |
+| Docker metadata | ~2 MB | — | ~0.5 KB | Labels, state, overlay layers |
+| **Total per instance** | **~264 MB** | **~0.52 cores** | **5–25 MB** | With PCAP + forensics |
+
+### PCAP Disk Usage by Challenge Type
+
+The biggest storage variable is packet capture. Rates assume `PCAP_SNAP_LEN=1024` and BPF filter active:
+
+| Challenge Type | Typical PCAP Rate | Worst Case | Notes |
+|----------------|-------------------|------------|-------|
+| Static web (Nginx) | 2-5 MB/hr | 15 MB/hr | Mostly GET requests |
+| Dynamic web (Flask/Node) | 5-15 MB/hr | 30 MB/hr | API calls, form submits |
+| PWN (socat + binary) | 1-3 MB/hr | 10 MB/hr | Short exploit payloads |
+| Crypto/Rev service | 1-5 MB/hr | 15 MB/hr | Depends on protocol |
+| Multi-service (DB+app+bot) | 10-25 MB/hr | 50 MB/hr | Internal chatter between services |
+| A/D game service | 20-80 MB/hr | 150 MB/hr | Continuous attack/defense traffic |
+
+> 💡 **Tip**: Use `PCAP_MODE=selected` with `PCAP_SELECTED_CHALLENGES` to capture only the challenges you care about and significantly reduce disk usage.
 
 ### Server Specifications
 
@@ -769,8 +961,8 @@ Whaley's production infrastructure adds minimal overhead:
 | Resource | Minimum | Notes |
 |----------|---------|-------|
 | CPU | 4 cores | 2 for Docker, 2 for app/Redis |
-| RAM | 8 GB | ~150 MB overhead + ~100 MB per instance |
-| Storage | 40 GB SSD | Docker images + SQLite + logs |
+| RAM | 16 GB | ~200 MB overhead + ~264 MB per instance |
+| Storage | 60 GB SSD | Docker images + PCAPs (~10 GB for 8h event) |
 | Network | 100 Mbps | Adequate for small events |
 | OS | Ubuntu 22.04+ / Debian 12+ | Docker 24.0+ recommended |
 
@@ -778,9 +970,9 @@ Whaley's production infrastructure adds minimal overhead:
 
 | Resource | Recommended | Notes |
 |----------|-------------|-------|
-| CPU | 8-16 cores | Parallel spawns, network creation |
-| RAM | 32-64 GB | ~256 MB per instance + overhead |
-| Storage | 100-200 GB NVMe SSD | Fast I/O for Docker + SQLite |
+| CPU | 8 cores | Parallel spawns, network creation |
+| RAM | 32 GB | ~264 MB per instance + overhead |
+| Storage | 150 GB NVMe SSD | Docker images + PCAPs (~20-40 GB) |
 | Network | 1 Gbps | High bandwidth for many connections |
 | OS | Ubuntu 22.04 LTS | Stable, well-tested |
 
@@ -788,10 +980,10 @@ Whaley's production infrastructure adds minimal overhead:
 
 | Resource | High-Load | Notes |
 |----------|-----------|-------|
-| CPU | 32+ cores | Parallel network/container ops |
-| RAM | 128 GB+ | Enables 400+ concurrent instances |
-| Storage | 500 GB NVMe | Fast storage critical |
-| Network | 10 Gbps | Consider load balancing |
+| CPU | 16+ cores | Parallel network/container ops |
+| RAM | 64 GB+ | Enables 200+ concurrent instances |
+| Storage | 300 GB NVMe | PCAPs dominate storage (~30-60 GB) |
+| Network | 1 Gbps+ | Consider load balancing |
 | Database | PostgreSQL | Replace SQLite for multi-worker |
 
 ### Capacity Estimation
@@ -799,15 +991,15 @@ Whaley's production infrastructure adds minimal overhead:
 #### Formula
 ```
 Base Overhead = 200 MB (Whaley + Redis + SQLite)
-Per-Instance = Container RAM + Network (~1 MB) + Metadata (~1 KB)
+Per-Instance = Challenge RAM + Sidecar (5 MB) + Network (~1 MB) + Metadata (~2 MB)
 
-Total RAM = Base Overhead + (Concurrent Instances × Avg Instance RAM)
-Ports Required = Concurrent Instances × Ports per Challenge
-Networks Required = Concurrent Instances (1 network per instance)
+Hard Cap = Teams × MAX_INSTANCES_PER_TEAM  (default: 2)
+Peak Instances = Hard Cap × Concurrency Factor (0.5-0.8)
 
-Concurrency Factor:
-- Jeopardy CTF: 0.3-0.5 (not all teams active simultaneously)
-- Attack-Defense: 0.8-1.0 (all teams need instances)
+Total RAM = Base Overhead + (Peak Instances × Avg Instance RAM)
+Total Disk = Docker Images + (PCAP Instances × PCAP Rate/hr × Event Hours)
+Ports Required = Peak Instances × Ports per Challenge
+Networks Required = Peak Instances × (1 isolation network + compose-defined networks)
 ```
 
 #### Example: National CTF (150 teams, Team Mode)
@@ -815,15 +1007,21 @@ Concurrency Factor:
 ```
 Event Profile:
 - Teams: 150 (using TEAM_MODE=enabled)
+- MAX_INSTANCES_PER_TEAM: 2
 - Instanced challenges: 8 challenges
 - Avg ports per challenge: 2
-- Avg RAM per instance: 256 MB
+- Avg RAM per instance: 264 MB (256 MB challenge + 5 MB sidecar + 3 MB overhead)
+- PCAP_MODE: all
+- Event duration: 10 hours
 
 Peak Load Calculation:
-- Concurrent instances: 150 × 8 × 0.4 = 480 instances
-- RAM: 200 MB + (480 × 256 MB) = ~123 GB
-- Ports: 480 × 2 = 960 ports
-- Networks: 480 isolated networks
+- Hard cap: 150 × 2 = 300 instances max
+- Peak instances: 300 × 0.7 = ~210 instances
+- RAM: 200 MB + (210 × 264 MB) = ~56 GB
+- Ports: 210 × 2 = 420 ports
+- Networks: 210 isolated networks, plus any compose-defined challenge networks
+- PCAP storage: 210 × 10 MB/hr × 10 hr = ~21 GB
+- Forensics logs: ~1500 terminates × 30 KB = ~45 MB
 - SQLite size: ~10 MB (event logs + port mappings)
 
 Realistic Deployment:
@@ -831,7 +1029,8 @@ Realistic Deployment:
 - Workers: 1 (SQLite) or 4 (PostgreSQL + Redis)
 - PORT_RANGE: 10000-40000 (30,000 ports)
 - INSTANCE_TIMEOUT: 1800 (30 min)
-- MAX_INSTANCES_PER_TEAM: 5
+- MAX_INSTANCES_PER_TEAM: 2
+- PCAP_RETENTION_HOURS: 24
 ```
 
 ### Configuration by Event Size
@@ -846,13 +1045,20 @@ DATABASE_URL=sqlite+aiosqlite:///./data/whaley.db
 # Limits
 PORT_RANGE_START=20000
 PORT_RANGE_END=30000
-MAX_INSTANCES_PER_USER=5
-MAX_INSTANCES_PER_TEAM=8
+MAX_INSTANCES_PER_USER=2
+MAX_INSTANCES_PER_TEAM=2
 INSTANCE_TIMEOUT=3600  # 1 hour
 
 # Network Isolation
 NETWORK_ISOLATION_ENABLED=true
 NETWORK_ICC_DISABLED=true
+
+# Packet Capture
+PCAP_ENABLED=true
+PCAP_MODE=all
+PCAP_MAX_SIZE_MB=25
+PCAP_RETENTION_HOURS=24
+PCAP_SNAP_LEN=1024
 ```
 
 #### Medium Event (50-150 teams) - With Redis
@@ -865,13 +1071,20 @@ REDIS_URL=redis://redis:6379/0
 # Limits
 PORT_RANGE_START=10000
 PORT_RANGE_END=40000
-MAX_INSTANCES_PER_USER=3
-MAX_INSTANCES_PER_TEAM=5
+MAX_INSTANCES_PER_USER=2
+MAX_INSTANCES_PER_TEAM=2
 INSTANCE_TIMEOUT=1800  # 30 minutes
 
 # Network Isolation
 NETWORK_ISOLATION_ENABLED=true
 NETWORK_ICC_DISABLED=true
+
+# Packet Capture
+PCAP_ENABLED=true
+PCAP_MODE=all
+PCAP_MAX_SIZE_MB=25
+PCAP_RETENTION_HOURS=24
+PCAP_SNAP_LEN=1024
 ```
 
 #### Large Event (150-300 teams) - Multi-Worker
@@ -885,13 +1098,132 @@ REDIS_URL=redis://redis:6379/0
 PORT_RANGE_START=10000
 PORT_RANGE_END=50000
 MAX_INSTANCES_PER_USER=2
-MAX_INSTANCES_PER_TEAM=4
+MAX_INSTANCES_PER_TEAM=2
 INSTANCE_TIMEOUT=1200  # 20 minutes
 
 # Network Isolation
 NETWORK_ISOLATION_ENABLED=true
 NETWORK_ICC_DISABLED=true
+
+# Packet Capture — use selected mode to save disk
+PCAP_ENABLED=true
+PCAP_MODE=selected
+PCAP_SELECTED_CHALLENGES=web-challenge-1,web-challenge-2,pwn-challenge-1
+PCAP_MAX_SIZE_MB=25
+PCAP_RETENTION_HOURS=12
+PCAP_SNAP_LEN=512
 ```
+
+## 🧪 Stress Testing
+
+Whaley ships with a reusable stress harness at [scripts/stress_test.py](/mnt/c/1Jonathan/CTFS/research-dir/whaley/scripts/stress_test.py). The script is aimed at rehearsal runs against a live deployment and focuses on the places where event infra usually starts to creak:
+
+- challenge discovery from `/challenges`
+- synthetic team-owned spawns through `/admin/api/instances/spawn`
+- mixed HTTP and raw TCP traffic against the spawned instances
+- periodic snapshots from `/admin/api/instances` and `/admin/api/pcap/status`
+- optional cleanup through `/admin/api/instances/{id}`
+
+### Why Use the Admin API in `AUTH_MODE=none`
+
+In `AUTH_MODE=none`, Whaley identifies normal users by client IP. If you drive the public `/instances/spawn` API from one machine, Whaley will mostly see one user instead of hundreds of simulated teams. The stress harness avoids that blind spot by using the admin spawn API and assigning synthetic `team_id` / `team_name` values to each spawned owner.
+
+### Prerequisites
+
+Install the Python dependencies first:
+
+```bash
+pip install -r requirements.txt
+```
+
+You also need:
+
+- a deployment where the supplied `ADMIN_KEY` works
+- active challenges visible from `/challenges`
+- enough free ports, RAM, and disk for the rehearsal you are about to run
+
+### Quick Smoke Test
+
+This is the safest first pass. It creates a small batch of instances, drives light traffic for two minutes, and tears everything down automatically.
+
+```bash
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --team-count 10 \
+  --instances-per-team 2 \
+  --traffic-seconds 120 \
+  --traffic-workers 16 \
+  --team-prefix smoke \
+  --cleanup
+```
+
+### Large Rehearsal
+
+This shape is closer to a serious pre-event soak:
+
+```bash
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --team-count 160 \
+  --instances-per-team 2 \
+  --traffic-seconds 900 \
+  --traffic-workers 64 \
+  --spawn-concurrency 8 \
+  --admin-qps 2.0 \
+  --team-prefix fullrun \
+  --state-file /tmp/whaley-stress.json
+```
+
+What those knobs do:
+
+- `--team-count`: number of synthetic teams to simulate
+- `--instances-per-team`: unique challenges per team; this must not exceed the number of discovered active challenges
+- `--traffic-seconds`: soak duration after the spawn phase
+- `--traffic-workers`: concurrent traffic loops
+- `--spawn-concurrency`: max in-flight admin spawn/stop requests from the harness
+- `--admin-qps`: pacing for admin mutations so you do not immediately collide with admin rate limiting
+- `--team-prefix`: gives each run a unique synthetic owner namespace
+- `--state-file`: saves created instance IDs so cleanup can be retried later
+
+### Cleanup Later
+
+If you omit `--cleanup`, the script saves created instances into the state file. You can stop them later with:
+
+```bash
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --cleanup-from-state /tmp/whaley-stress.json
+```
+
+### Suggested Progression
+
+Run the rehearsal in stages instead of jumping straight to the ugliest case:
+
+1. `10 teams x 2 instances` with `--cleanup`
+2. `40 teams x 2 instances`, longer traffic, still auto-cleanup
+3. `160 teams x 2 instances` without cleanup so you can inspect metrics and PCAP growth
+4. cleanup from the saved state file
+
+This keeps basic spawn bugs separate from long-run pressure like disk growth, sidecar instability, or Docker network churn.
+
+### What to Watch During the Run
+
+- `/admin/api/instances`: total instance count and `starting/running/error` mix
+- `/admin/api/pcap/status`: capture instance count, file count, and `total_size_mb`
+- `/metrics`: Prometheus counters and gauges for instance lifecycle, ports, and storage
+- Docker host memory, CPU, and disk usage
+- sidecar restarts or `OOMKilled` flags on `whaley-pcap` containers
+
+### Tuning Notes
+
+- Keep `--spawn-concurrency` close to Whaley's internal spawn semaphore. The default is 10 concurrent spawns, so values like `8` or `10` are a good fit.
+- If admin requests start returning `429`, lower `--admin-qps` or temporarily raise `ADMIN_RATE_LIMIT`.
+- The script discovers challenges dynamically from `/challenges`, so inactive challenges are skipped automatically.
+- Traffic generation is intentionally generic. For deeper realism, extend the harness with challenge-specific HTTP paths or protocol payloads.
+
 
 ### Resource Limits per Challenge
 
@@ -970,6 +1302,7 @@ htop
 #### During Event
 - Monitor `/health` endpoint for instance count
 - Watch disk space: `df -h`
+- Check PCAP storage: `du -sh logs/pcaps/`
 - Check Docker networks: `docker network ls | wc -l`
 - Check database size: `ls -lh data/whaley.db`
 - Redis stats: `redis-cli info memory`
@@ -980,7 +1313,8 @@ htop
 |--------|---------|----------|--------|
 | RAM Usage | >70% | >90% | Reduce INSTANCE_TIMEOUT |
 | CPU Usage | >80% sustained | >95% | Limit concurrent spawns |
-| Disk Usage | >80% | >90% | Cleanup Docker images |
+| Disk Usage | >70% | >85% | Trigger PCAP cleanup, reduce retention |
+| PCAP Storage | >50 GB | >100 GB | Switch to `PCAP_MODE=selected` or reduce `PCAP_SNAP_LEN` |
 | Active Networks | >400 | >500 | May need kernel tuning |
 | SQLite Size | >100 MB | >500 MB | Consider PostgreSQL |
 | Redis Memory | >100 MB | >500 MB | Check for lock leaks |
@@ -1009,7 +1343,7 @@ FORENSICS_MAX_SIZE_MB=5         # Max log size per instance
 FORENSICS_TAIL_LINES=1000       # Max lines per container
 
 # Storage
-FORENSICS_RETENTION_HOURS=168   # Auto-delete logs older than this (168 = 7 days)
+FORENSICS_RETENTION_HOURS=24    # Auto-delete logs older than this (24 = 1 day)
 FORENSICS_COMPRESSION=true      # Compress with gzip (~90% savings)
 FORENSICS_LOG_DIR=/app/logs/forensics
 ```
@@ -1039,9 +1373,11 @@ Event Calculation (150 teams, 8h event):
 - Logs per instance: 30 KB compressed
 - Total: 3600 × 30 KB = ~108 MB
 
-With 7-day retention:
-- Daily events: ~108 MB/day
-- Max storage: ~756 MB (very manageable)
+With 24-hour retention (default):
+- Max storage: ~108 MB (very manageable)
+
+Note: Forensic logs are negligible compared to PCAP storage.
+PCAP captures dominate disk usage at 5-25 MB/hr per instance.
 ```
 
 #### Burst Write Scenario (Event End)
@@ -1065,35 +1401,35 @@ Write speed required: ~0.5 MB/s (any SSD handles this easily)
 FORENSICS_AUTO_CAPTURE=true     # Safe to enable
 FORENSICS_TAIL_LINES=500
 FORENSICS_MAX_SIZE_MB=2
-FORENSICS_RETENTION_HOURS=72    # 3 days
+FORENSICS_RETENTION_HOURS=24    # 1 day
 ```
 
-**Additional server requirement:** +10 GB disk
+**Additional server requirement:** +1 GB disk (negligible)
 
 #### Medium Event (50-150 teams)
 ```env
 FORENSICS_AUTO_CAPTURE=true     # Enable with monitoring
 FORENSICS_TAIL_LINES=1000
 FORENSICS_MAX_SIZE_MB=5
-FORENSICS_RETENTION_HOURS=168   # 7 days
+FORENSICS_RETENTION_HOURS=24    # 1 day
 FORENSICS_COMPRESSION=true
 ```
 
-**Additional server requirement:** +20 GB SSD (NVMe recommended)
+**Additional server requirement:** +1 GB disk (negligible vs PCAP storage)
 
 #### Large Event (150-300 teams)
 ```env
 FORENSICS_AUTO_CAPTURE=false    # Consider Live Capture only
 FORENSICS_TAIL_LINES=500
 FORENSICS_MAX_SIZE_MB=3
-FORENSICS_RETENTION_HOURS=72    # 3 days
+FORENSICS_RETENTION_HOURS=12    # 12 hours
 FORENSICS_COMPRESSION=true
 ```
 
 **Considerations:**
 - Use Live Capture for on-demand debugging instead
-- Or separate log storage disk/mount
-- **Additional requirement:** +30 GB NVMe SSD
+- Forensic logs are tiny — PCAP storage is the real disk concern
+- **Additional requirement:** +1 GB disk
 
 ### Using Instance Forensics
 
@@ -1136,6 +1472,8 @@ curl -X POST "http://localhost:8000/admin/api/forensics/cleanup" \
 ```
 
 Use `X-Admin-Key: <ADMIN_KEY>` instead when `AUTH_MODE=none`.
+
+---
 
 ### Best Practices
 
@@ -1482,19 +1820,99 @@ http {
 
 ---
 
+## 📡 Native Packet Capture
+
+Whaley can attach a lightweight `tcpdump` sidecar to each new instance spawn and keep the resulting `.pcap` files under `/app/logs/pcaps/{instance_id}` for incident response, traffic review, and anti-cheat analysis.
+
+### Configuration
+
+```env
+PCAP_ENABLED=true
+PCAP_MODE=all
+PCAP_SELECTED_CHALLENGES=
+PCAP_MAX_SIZE_MB=25
+PCAP_RETENTION_HOURS=24
+PCAP_SNAP_LEN=1024
+PCAP_BPF_FILTER=not (host 127.0.0.11 and port 53)
+```
+
+- `PCAP_MODE`: `all`, `selected`, or `none` for future spawns
+- `PCAP_SELECTED_CHALLENGES`: challenge IDs used when the mode is `selected`
+- `PCAP_MAX_SIZE_MB`: rotated file size cap used by `tcpdump -C`
+- `PCAP_RETENTION_HOURS`: how long captures are kept before cleanup removes them
+- `PCAP_SNAP_LEN`: snap length used for each packet
+- `PCAP_BPF_FILTER`: default filter trims Docker embedded DNS noise
+
+### How it works
+
+- New instances get a `whaley-pcap` sidecar that shares the instance network namespace
+- Captures are rotated into per-instance directories, compressed after rotation, and kept after the instance stops
+- The admin dashboard lists captures from lightweight metadata and parses flows on demand with `scapy`
+- Packet-capture sidecars are excluded from the regular per-instance logs/metrics views so the challenge containers stay front and center
+
+### Using the dashboard
+
+1. Open **Whaley Logs** -> **Packet Capture**
+2. Choose the policy for future spawns: **Capture All**, **Capture Selected**, or **Capture Disabled**
+3. If using selected mode, tick the challenge IDs that should get packet capture
+4. Select an instance that has capture files
+5. Filter by protocol, search payloads, or restrict to flows tagged with `contains_flag`
+6. Click a flow to inspect packet previews and the follow-stream payload view
+7. Use **Download Raw Capture** to export the underlying `.pcap` files
+8. Use **Cleanup Old** to remove capture directories older than `PCAP_RETENTION_HOURS`
+
+### API examples
+
+```bash
+# Capture status and storage usage
+curl -X GET "http://localhost:8000/admin/api/pcap/status" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+
+# List flows for one instance
+curl -X GET "http://localhost:8000/admin/api/pcap/instances/{instance_id}/flows?protocol=HTTP&flagged_only=true" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+
+# Search payloads for a token or flag fragment
+curl -X GET "http://localhost:8000/admin/api/pcap/instances/{instance_id}/search?q=FLAG%7B" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+
+# Download the raw PCAP bundle
+curl -L -X GET "http://localhost:8000/admin/api/pcap/instances/{instance_id}/download" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN" \
+     -o instance_capture.zip
+```
+
+### Prometheus metrics
+
+When `METRICS_SECRET` is configured, `/metrics` also exposes:
+
+- `whaley_pcap_instances_total`
+- `whaley_pcap_total_size_bytes`
+- `whaley_pcap_enabled`
+
+### Operational notes
+
+- Packet capture is preserved after instance teardown so it can be reviewed later
+- Cleanup runs in the background alongside forensics retention cleanup
+- Disk is the main resource to watch; use retention and BPF filters to keep it under control
+
+---
+
 ## 🔍 Resource Monitoring
 
-Whaley includes native resource monitoring to track CPU and memory usage of containers and the host system. This helps identify resource-intensive instances and prevent server overload.
+Whaley includes native resource monitoring to track host pressure and, when requested, sampled Docker CPU/memory usage for the currently visible page of instances. This keeps the admin dashboard responsive during large events while still giving you drill-down detail when you need it.
 
 ### Features
 
 | Feature | Description | Use Case |
 |---------|-------------|----------|
-| **System Overview** | Host CPU cores, total memory, container count | Monitor overall server health |
-| **Per-Instance Metrics** | CPU & RAM usage aggregated by instance | Identify resource-hungry challenges |
+| **System Overview** | Host load average, memory, disk, and tracked container count | Monitor overall server health |
+| **Instance Inventory** | Paginated list of active instances without Docker stats by default | Keep the dashboard responsive at high instance counts |
+| **Per-Page Metrics Sampling** | CPU & RAM usage aggregated only for the visible page | Identify resource-hungry challenges without sweeping all containers |
 | **Per-Container Metrics** | Detailed metrics for each container | Pinpoint specific container issues |
 | **High Usage Filter** | Show only instances with CPU >50% or RAM >80% | Quick identification of problems |
-| **Real-Time Updates** | Refresh metrics on-demand | Live monitoring during events |
+| **Firewall Status** | Show connlimit/hashlimit policy, tracked rule counts, and stale rules | Confirm host DoS protection is active |
+| **Real-Time Updates** | Refresh host snapshot on-demand | Live monitoring during events |
 
 ### Accessing Monitoring
 
@@ -1503,12 +1921,13 @@ Whaley includes native resource monitoring to track CPU and memory usage of cont
 1. Navigate to **Admin Dashboard** → **Monitoring** tab
 2. View **System Overview** card showing:
    - Total/running containers
-   - Total CPU usage (% and cores available)
-   - Total memory usage (MB and host %)
-3. Scroll to **Instance Resource Usage** section
-4. (Optional) Enable "Show high usage only" filter
-5. Click "Refresh" button to update metrics
-6. Expand instance cards to see per-container details
+   - Host load averages and CPU core count
+   - Host memory usage and disk usage
+3. Review **Firewall Rate Limits** to confirm the backend, policy, and stale-rule count
+4. Scroll to **Instance Inventory** section
+5. (Optional) Enable "Show high usage only" filter
+6. Click **Sample Page Metrics** when you need Docker CPU/RAM details for the current page
+7. Expand instance cards to see per-container details or use the **Firewall** button for per-instance rule state
 
 #### Via API
 
@@ -1521,17 +1940,21 @@ curl -X GET "http://localhost:8000/admin/api/monitoring/system" \
 {
   "total_containers": 15,
   "running_containers": 15,
-  "total_cpu_percent": 45.3,
-  "total_memory_mb": 1024.5,
   "host_cpu_cores": 8,
   "host_memory_total_mb": 16384.0,
   "host_memory_used_mb": 8192.0,
   "host_memory_percent": 50.0,
+  "loadavg_1": 1.12,
+  "loadavg_5": 0.94,
+  "loadavg_15": 0.81,
+  "disk_total_gb": 200.0,
+  "disk_used_gb": 84.5,
+  "disk_percent": 42.3,
   "timestamp": "2026-01-09T10:30:00Z"
 }
 
-# Get per-instance metrics
-curl -X GET "http://localhost:8000/admin/api/monitoring/instances" \
+# Get the paginated instance inventory (lightweight by default)
+curl -X GET "http://localhost:8000/admin/api/monitoring/instances?limit=20&offset=0" \
      -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # Response:
@@ -1544,6 +1967,36 @@ curl -X GET "http://localhost:8000/admin/api/monitoring/instances" \
       "owner_id": "user123",
       "owner_name": "alice",
       "container_count": 3,
+      "metrics_available": false,
+      "metrics_sampled": false,
+      "total_cpu_percent": null,
+      "total_memory_mb": null,
+      "containers": [],
+      "message": null
+    }
+  ],
+  "total_instances": 1,
+  "limit": 20,
+  "offset": 0,
+  "include_metrics": false
+}
+
+# Sample Docker metrics for just the current page
+curl -X GET "http://localhost:8000/admin/api/monitoring/instances?limit=20&offset=0&include_metrics=true" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+
+# Response:
+{
+  "instances": [
+    {
+      "instance_id": "web-1-abc123",
+      "challenge_id": "web-challenge",
+      "challenge_name": "Example Web Challenge",
+      "owner_id": "user123",
+      "owner_name": "alice",
+      "container_count": 3,
+      "metrics_available": true,
+      "metrics_sampled": true,
       "total_cpu_percent": 25.5,
       "total_memory_mb": 512.3,
       "containers": [
@@ -1562,6 +2015,47 @@ curl -X GET "http://localhost:8000/admin/api/monitoring/instances" \
   ],
   "total_instances": 1
 }
+```
+
+For a single instance, use the admin instance metrics endpoint. This is what the dashboard's **Metrics** button calls:
+
+```bash
+curl -X GET "http://localhost:8000/admin/api/instances/{instance_id}/metrics" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+```
+
+### Firewall Rate-Limit Status
+
+Whaley can apply host-level `connlimit` and `hashlimit` rules for each published challenge port. Rules are installed when an instance finishes spawning, removed when it stops or expires, and cleaned up periodically on startup/maintenance in case the process previously crashed.
+
+Important notes:
+
+- Whaley targets Docker published ports via `DOCKER-USER`, not plain `INPUT`
+- Matching uses the original destination port through conntrack
+- If Whaley runs inside a container, use `FIREWALL_USE_NSENTER=true` or equivalent host firewall access
+- `FIREWALL_STRICT=false` lets an instance run even if firewall rule apply fails, but the admin dashboard will show degraded status
+
+```bash
+# Global firewall status
+curl -X GET "http://localhost:8000/admin/api/firewall/status" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+
+# One instance's tracked rules
+curl -X GET "http://localhost:8000/admin/api/firewall/instances/web-1-abc123" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+```
+
+For Prometheus scraping, set `METRICS_SECRET` and scrape `/metrics`:
+
+```yaml
+scrape_configs:
+  - job_name: whaley
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["your-instancer:8000"]
+    authorization:
+      type: Bearer
+      credentials: "your-metrics-secret"
 ```
 
 ### Understanding Metrics
@@ -1660,14 +2154,18 @@ The monitoring system has minimal impact:
 - **Update Frequency**: Metrics are not real-time, refresh manually via button
 - **Historical Data**: No historical tracking (use external monitoring for trends)
 - **Alerting**: No built-in alerts (admin must actively check)
-- **Network I/O**: Shown but not prominently featured in UI
-- **Disk I/O**: Available via API but not in main UI view
+- **Network I/O**: Available in per-instance metrics detail and API
+- **Disk I/O**: Available in per-instance metrics detail and API
 
 ### External Monitoring Integration
 
 For production deployments, consider integrating external monitoring:
 
-**Prometheus + Grafana**:
+**Whaley `/metrics`**:
+
+Use the built-in protected Prometheus endpoint for Whaley-level metrics: instance counts/status, owner/team/challenge breakdowns, per-instance age/expiry, port pool usage, dynamic flags, suspicious submissions, forensics storage, packet-capture storage, and event counters.
+
+**cAdvisor + Grafana**:
 ```yaml
 # docker-compose.yaml
 services:
@@ -1690,7 +2188,7 @@ services:
       - "9100:9100"
 ```
 
-Then configure Prometheus to scrape these endpoints for long-term storage and alerting.
+Then configure Prometheus to scrape Whaley, cAdvisor, and Node Exporter for long-term storage and alerting.
 
 ---
 
@@ -1702,17 +2200,19 @@ Then configure Prometheus to scrape these endpoints for long-term storage and al
 2. **Admin RBAC** - In CTFd mode, use CTFd admin users for `/admin`; in no-auth mode protect `ADMIN_KEY` like a password
 3. **Resource Limits** - Set proper `mem_limit` and `cpus` in challenges; Whaley also enforces global caps
 4. **Network Isolation** - Keep per-instance network isolation enabled for production
-5. **Compose Hardening** - Challenge compose files cannot use privileged mode, host/container namespaces, custom `network_mode`, added capabilities/devices, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, or bind mounts outside the challenge directory
+5. **Compose Hardening** - Challenge compose files cannot use privileged mode, host/container namespaces, custom `network_mode`, added capabilities/devices, unsafe security options, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, or bind mounts outside the challenge directory. `security_opt: ["no-new-privileges:true"]` is allowed.
 6. **Trusted Proxies** - Configure `TRUSTED_PROXIES` when using no-auth mode behind a reverse proxy so client identity cannot be spoofed with forwarded headers
 7. **Timeouts** - Set reasonable instance timeouts
 8. **Rate Limiting** - Admin APIs have built-in per-IP limits; add edge rate limiting for public endpoints in high-traffic events
+9. **Metrics Secret** - Set a strong `METRICS_SECRET` before exposing `/metrics`; leave it empty to disable the endpoint
+10. **Lifecycle Cleanup** - Keep Docker labels intact; they allow Whaley to identify and clean stale per-instance resources safely
 
 ### Persistent Port Mapping
 
 The instancer implements **persistent port mapping**:
 
 - When a user spawns a challenge for the first time, they receive randomly allocated ports
-- The port mapping is saved to `logs/user_ports.json`
+- The port mapping is saved in the database (`user_port_mappings`)
 - When the instance expires and the user spawns the same challenge again, they receive the **same ports**
 
 **How it works:**
@@ -1734,6 +2234,10 @@ When `DYNAMIC_FLAGS_ENABLED=true`, each user receives a **unique flag** per chal
 3. **CTFd Registration** - The flag is registered with CTFd for that specific user
 4. **Submission Monitoring** - When "Check Now" is clicked, recent CTFd submissions are scanned
 5. **Cheating Detection** - If User B submits User A's flag, it's logged as suspicious
+
+Flag mappings, challenge mappings, submission scan checkpoints, and suspicious submissions are stored in the database. Whaley enforces uniqueness for owner/challenge flag mappings, flag content, and suspicious submission keys to prevent duplicate flag rows or repeated suspicious entries after restarts, retries, or full scans. Legacy `logs/flag_mappings.json` data is imported once if present.
+
+Flag injection only replaces same-line patterns like `FLAG{placeholder}`. Unclosed placeholders such as `FLAG{` do not match across newlines, which prevents accidental corruption of later source code braces or shell `${variables}`.
 
 **Setup:**
 
