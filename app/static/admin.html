@@ -2106,6 +2106,7 @@
                     <div class="card-header">
                         <h2>🔍 Instance Resource Usage</h2>
                         <div class="header-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="sampleMonitoringPage()">Sample Page Metrics</button>
                             <label>
                                 <input type="checkbox" id="filter-high-usage" onchange="filterMonitoringInstances()">
                                 Show high usage only (CPU >50% or RAM >80%)
@@ -2476,6 +2477,37 @@
             }
 
             return response.json();
+        }
+
+        async function adminApiWithTimeout(endpoint, timeoutMs = 10000, method = 'GET', body = null) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            const options = {
+                method,
+                headers: adminHeaders(),
+                signal: controller.signal
+            };
+
+            if (body) {
+                options.headers['Content-Type'] = 'application/json';
+                options.body = JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(endpoint, options);
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.detail || data.message || 'API Error');
+                }
+                return await response.json();
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    throw new Error('Request timed out');
+                }
+                throw error;
+            } finally {
+                clearTimeout(timer);
+            }
         }
 
         async function loadStats() {
@@ -4775,18 +4807,20 @@ ${rows}
 
         let allMonitoringInstances = [];
 
-        async function loadMonitoringData() {
+        async function loadMonitoringData(options = {}) {
             if (monitoringLoadInFlight) return;
             monitoringLoadInFlight = true;
             try {
+                const includeMetrics = Boolean(options.includeMetrics);
                 const offset = (monitoringInstancesPage - 1) * MONITORING_INSTANCES_PAGE_SIZE;
+                const metricsParam = includeMetrics ? '&include_metrics=true' : '';
 
-                // Load a lightweight system snapshot and one page of instance
-                // metrics. Full Docker stats sweeps are too expensive during
-                // stress tests with hundreds of containers.
                 const [systemData, instancesData] = await Promise.all([
-                    adminApi('/admin/api/monitoring/system'),
-                    adminApi(`/admin/api/monitoring/instances?limit=${MONITORING_INSTANCES_PAGE_SIZE}&offset=${offset}`)
+                    adminApiWithTimeout('/admin/api/monitoring/system', 5000),
+                    adminApiWithTimeout(
+                        `/admin/api/monitoring/instances?limit=${MONITORING_INSTANCES_PAGE_SIZE}&offset=${offset}${metricsParam}`,
+                        includeMetrics ? 25000 : 7000
+                    )
                 ]);
 
                 // Update system stats
@@ -4794,11 +4828,11 @@ ${rows}
                 document.getElementById('stat-running-containers').textContent = systemData.running_containers;
                 document.getElementById('stat-total-cpu').textContent = systemData.container_stats_sampled
                     ? systemData.total_cpu_percent.toFixed(2) + '%'
-                    : 'Paged';
+                    : 'On demand';
                 document.getElementById('stat-cpu-cores').textContent = systemData.host_cpu_cores + ' cores available';
                 document.getElementById('stat-total-memory').textContent = systemData.container_stats_sampled
                     ? systemData.total_memory_mb.toFixed(0) + ' MB'
-                    : 'Paged';
+                    : 'On demand';
 
                 const memPercent = systemData.host_memory_total_mb > 0
                     ? ((systemData.host_memory_used_mb / systemData.host_memory_total_mb) * 100).toFixed(1)
@@ -4834,7 +4868,8 @@ ${rows}
             // Filter high usage on the current metrics page.
             if (showHighUsageOnly) {
                 instances = instances.filter(inst => {
-                    const highCpu = inst.total_cpu_percent > 50;
+                    if (!inst.metrics_available) return false;
+                    const highCpu = (inst.total_cpu_percent || 0) > 50;
                     const highMemory = (inst.containers || []).some(c => c.memory_percent > 80);
                     return highCpu || highMemory;
                 });
@@ -4847,14 +4882,18 @@ ${rows}
                 return;
             }
 
-            // Sort by CPU usage (highest first)
-            instances.sort((a, b) => b.total_cpu_percent - a.total_cpu_percent);
+            // Sort sampled rows by CPU usage, keep unsampled rows stable after them.
+            instances.sort((a, b) => (b.total_cpu_percent ?? -1) - (a.total_cpu_percent ?? -1));
 
             const html = instances.map(inst => {
-                const cpuClass = inst.total_cpu_percent > 80 ? 'danger' : inst.total_cpu_percent > 50 ? 'warning' : 'success';
+                const hasMetrics = Boolean(inst.metrics_available);
+                const cpuValue = hasMetrics ? inst.total_cpu_percent : null;
+                const memoryValue = hasMetrics ? inst.total_memory_mb : null;
+                const cpuClass = (cpuValue || 0) > 80 ? 'danger' : (cpuValue || 0) > 50 ? 'warning' : 'success';
                 const instanceContainers = inst.containers || [];
                 const avgMemPercent = instanceContainers.reduce((sum, c) => sum + c.memory_percent, 0) / Math.max(1, instanceContainers.length);
                 const memClass = avgMemPercent > 80 ? 'danger' : avgMemPercent > 60 ? 'warning' : 'success';
+                const statusClass = inst.status === 'running' ? 'success' : inst.status === 'error' ? 'danger' : 'warning';
 
                 const containersHtml = instanceContainers.map(c => {
                     const containerCpuClass = c.cpu_percent > 80 ? 'danger' : c.cpu_percent > 50 ? 'warning' : 'success';
@@ -4886,33 +4925,43 @@ ${rows}
                                     <p style="margin: 0.25rem 0 0 0; color: var(--text-muted); font-size: 0.85rem;">
                                         Owner: ${escapeHtml(inst.owner_name)} | Instance: ${escapeHtml(inst.instance_id)}
                                     </p>
+                                    <p style="margin: 0.35rem 0 0 0; font-size: 0.85rem;">
+                                        <span class="forensics-type ${statusClass}">${escapeHtml(inst.status || 'unknown')}</span>
+                                        <span style="color: var(--text-muted); margin-left: 0.5rem;">${inst.container_count || 0} container(s)</span>
+                                    </p>
                                 </div>
                                 <div style="text-align: right;">
                                     <div style="display: flex; gap: 1rem; align-items: center;">
                                         <div>
                                             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Total CPU</div>
                                             <span class="forensics-type ${cpuClass}" style="font-size: 1.2rem; font-weight: bold;">
-                                                ${inst.total_cpu_percent.toFixed(1)}%
+                                                ${hasMetrics ? cpuValue.toFixed(1) + '%' : 'Live'}
                                             </span>
                                         </div>
                                         <div>
                                             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Total RAM</div>
                                             <span class="forensics-type ${memClass}" style="font-size: 1.2rem; font-weight: bold;">
-                                                ${inst.total_memory_mb.toFixed(0)} MB
+                                                ${hasMetrics ? memoryValue.toFixed(0) + ' MB' : 'Manual'}
                                             </span>
                                         </div>
+                                    </div>
+                                    <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem;">
+                                        <button class="btn btn-secondary btn-sm" onclick="showInstanceMetrics('${escapeHtml(inst.instance_id)}')">Metrics</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="showInstanceLogs('${escapeHtml(inst.instance_id)}')">Logs</button>
                                     </div>
                                 </div>
                             </div>
                             
-                            <details style="margin-top: 0.5rem;">
-                                <summary style="cursor: pointer; color: var(--accent-primary); font-size: 0.9rem; user-select: none;">
-                                    📦 ${inst.container_count} Container(s) - Click to expand
-                                </summary>
-                                <div style="margin-top: 0.5rem;">
-                                    ${containersHtml}
-                                </div>
-                            </details>
+                            ${hasMetrics ? `
+                                <details style="margin-top: 0.5rem;">
+                                    <summary style="cursor: pointer; color: var(--accent-primary); font-size: 0.9rem; user-select: none;">
+                                        📦 ${inst.container_count} Container(s)
+                                    </summary>
+                                    <div style="margin-top: 0.5rem;">
+                                        ${containersHtml || '<p style="color: var(--text-muted);">No container metrics returned</p>'}
+                                    </div>
+                                </details>
+                            ` : ''}
                         </div>
                     </div>
                 `;
@@ -4924,9 +4973,15 @@ ${rows}
         }
 
         async function refreshMonitoring() {
-            showToast('Refreshing metrics...', 'info');
+            showToast('Refreshing monitoring...', 'info');
             await loadMonitoringData();
-            showToast('Metrics refreshed', 'success');
+            showToast('Monitoring refreshed', 'success');
+        }
+
+        async function sampleMonitoringPage() {
+            showToast('Sampling current page metrics...', 'info');
+            await loadMonitoringData({ includeMetrics: true });
+            showToast('Page metrics sampled', 'success');
         }
 
         // =============================================================================

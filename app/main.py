@@ -2390,6 +2390,28 @@ async def admin_monitoring_system(
 ):
     """Get overall system resource metrics."""
     monitoring = get_monitoring_manager()
+
+    if not include_container_stats:
+        host_info = await monitoring._get_host_info()
+        active_instances = list(docker_manager.instances.values())
+        running_instances = [
+            instance for instance in active_instances
+            if (getattr(instance.status, "value", instance.status) == "running")
+        ]
+        tracked_containers = sum(len(instance.container_ids or []) for instance in running_instances)
+        return {
+            "total_containers": tracked_containers,
+            "running_containers": tracked_containers,
+            "total_cpu_percent": 0.0,
+            "total_memory_mb": 0.0,
+            "container_stats_sampled": False,
+            "host_cpu_cores": host_info["cpu_cores"],
+            "host_memory_total_mb": host_info["memory_total_mb"],
+            "host_memory_used_mb": host_info["memory_used_mb"],
+            "host_memory_percent": host_info["memory_percent"],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
     metrics = await monitoring.get_system_metrics(include_container_stats=include_container_stats)
     
     return {
@@ -2410,28 +2432,42 @@ async def admin_monitoring_system(
 async def admin_monitoring_instances(
     limit: int = 20,
     offset: int = 0,
+    include_metrics: bool = False,
     _: bool = Depends(verify_admin_key)
 ):
-    """Get paginated resource metrics for active instances."""
+    """Get paginated monitoring rows; live Docker stats are opt-in."""
     monitoring = get_monitoring_manager()
 
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
     
-    # Get all running instances, then sample only the requested page. Docker
-    # stats is intentionally page-scoped because each metric read can block on
-    # the Docker daemon under large stress tests.
-    running_instances = [
-        instance
-        for instance in docker_manager.instances.values()
-        if instance.status == "running"
+    active_instances = [
+        instance for instance in docker_manager.instances.values()
+        if getattr(instance.status, "value", instance.status) in {"starting", "running", "stopping", "error"}
     ]
-    total_running = len(running_instances)
-    page_instances = running_instances[offset:offset + limit]
+    active_instances.sort(key=lambda inst: inst.created_at, reverse=True)
+    total_active = len(active_instances)
+    page_instances = active_instances[offset:offset + limit]
     
     instance_metrics = []
-    
+
+    def build_lightweight_row(instance):
+        summary = _instance_summary(instance)
+        summary.update({
+            "metrics_available": False,
+            "metrics_sampled": False,
+            "message": None,
+            "total_cpu_percent": None,
+            "total_memory_mb": None,
+            "containers": [],
+        })
+        return summary
+
     async def collect_instance_metrics(instance):
+        row = build_lightweight_row(instance)
+        if not include_metrics or getattr(instance.status, "value", instance.status) != "running":
+            return row
+
         # Get challenge name from challenge config
         challenge = docker_manager.challenges.get(instance.challenge_id)
         challenge_name = challenge.name if challenge else instance.challenge_id
@@ -2447,10 +2483,12 @@ async def admin_monitoring_instances(
                 container_ids = [container["id"] for container in containers]
             except Exception as e:
                 print(f"[Monitoring] Failed to get containers for {instance.instance_id}: {e}")
-                return None
+                row["message"] = "Container lookup failed"
+                return row
         
         if not container_ids:
-            return None
+            row["message"] = "No Docker containers found"
+            return row
         
         # Get metrics for this instance
         try:
@@ -2464,7 +2502,9 @@ async def admin_monitoring_instances(
             )
             
             if metrics:
-                return {
+                row.update({
+                    "metrics_available": True,
+                    "metrics_sampled": True,
                     "instance_id": metrics.instance_id,
                     "challenge_id": metrics.challenge_id,
                     "challenge_name": metrics.challenge_name,
@@ -2486,13 +2526,14 @@ async def admin_monitoring_instances(
                         for c in metrics.containers
                     ],
                     "timestamp": metrics.timestamp
-                }
+                })
         except Exception as e:
             print(f"[Monitoring] Failed to get metrics for instance {instance.instance_id}: {e}")
-        return None
+            row["message"] = "Docker metrics unavailable"
+        return row
 
     # Keep Docker stats calls bounded even inside a page.
-    semaphore = asyncio.Semaphore(4)
+    semaphore = asyncio.Semaphore(2)
 
     async def collect_with_limit(instance):
         async with semaphore:
@@ -2508,11 +2549,12 @@ async def admin_monitoring_instances(
     
     return {
         "instances": instance_metrics,
-        "total_instances": total_running,
+        "total_instances": total_active,
         "returned_instances": len(instance_metrics),
         "limit": limit,
         "offset": offset,
-        "has_more": offset + limit < total_running
+        "include_metrics": include_metrics,
+        "has_more": offset + limit < total_active
     }
 
 
