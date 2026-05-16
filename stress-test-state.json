@@ -1,12 +1,12 @@
 {
-  "created_at": "2026-05-16T11:02:21.444109+00:00",
+  "created_at": "2026-05-16T12:32:12.532884+00:00",
   "base_url": "http://34.126.116.188:8000",
   "mode": "completed",
   "args": {
     "base_url": "http://34.126.116.188:8000",
     "admin_key": "<redacted>",
     "team_count": 10,
-    "team_prefix": "smoke",
+    "team_prefix": "tesdua",
     "instances_per_team": 2,
     "spawn_concurrency": 8,
     "admin_qps": 2.0,
@@ -23,7 +23,7 @@
     "cleanup_from_state": "",
     "state_file": "stress-test-state.json"
   },
-  "effective_team_prefix": "smoke",
+  "effective_team_prefix": "tesdua",
   "challenges": [
     {
       "id": "example-web",
@@ -52,231 +52,258 @@
   ],
   "instances": [
     {
-      "instance_id": "example-web-smoke-team-001-d3a6a52a",
+      "instance_id": "example-web-tesdua-team-001-e2015179",
       "challenge_id": "example-web",
       "challenge_name": "Example Web Challenge",
       "category": "web",
-      "team_id": "smoke-team-001",
+      "team_id": "tesdua-team-001",
       "team_name": "Stress Team 001",
-      "user_id": "smoke-team-001-user-1",
-      "username": "smoke-team-001-user-1",
+      "user_id": "tesdua-team-001-user-1",
+      "username": "tesdua-team-001-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:43806",
+      "public_url": "34.126.116.188:47371",
       "public_urls": {
-        "80": "34.126.116.188:43806"
+        "80": "34.126.116.188:47371"
       }
     },
     {
-      "instance_id": "enterprise-smoke-team-002-0593c88a",
+      "instance_id": "enterprise-tesdua-team-002-f83abce9",
       "challenge_id": "enterprise",
       "challenge_name": "Enterprise",
       "category": "web",
-      "team_id": "smoke-team-002",
+      "team_id": "tesdua-team-002",
       "team_name": "Stress Team 002",
-      "user_id": "smoke-team-002-user-1",
-      "username": "smoke-team-002-user-1",
+      "user_id": "tesdua-team-002-user-1",
+      "username": "tesdua-team-002-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:38941",
+      "public_url": "34.126.116.188:51163",
       "public_urls": {
-        "10077": "34.126.116.188:38941"
+        "10077": "34.126.116.188:51163"
       }
     },
     {
-      "instance_id": "example-web-smoke-team-004-0c9faaba",
+      "instance_id": "example-pwn-tesdua-team-003-509cfe2c",
+      "challenge_id": "example-pwn",
+      "challenge_name": "Example PWN Challenge",
+      "category": "pwn",
+      "team_id": "tesdua-team-003",
+      "team_name": "Stress Team 003",
+      "user_id": "tesdua-team-003-user-1",
+      "username": "tesdua-team-003-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:54280",
+      "public_urls": {
+        "9999": "34.126.116.188:54280"
+      }
+    },
+    {
+      "instance_id": "example-web-tesdua-team-004-61c472cb",
       "challenge_id": "example-web",
       "challenge_name": "Example Web Challenge",
       "category": "web",
-      "team_id": "smoke-team-004",
+      "team_id": "tesdua-team-004",
       "team_name": "Stress Team 004",
-      "user_id": "smoke-team-004-user-1",
-      "username": "smoke-team-004-user-1",
+      "user_id": "tesdua-team-004-user-1",
+      "username": "tesdua-team-004-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:36178",
+      "public_url": "34.126.116.188:49180",
       "public_urls": {
-        "80": "34.126.116.188:36178"
+        "80": "34.126.116.188:49180"
       }
     },
     {
-      "instance_id": "enterprise-smoke-team-001-41c1b002",
+      "instance_id": "enterprise-tesdua-team-001-52f5a622",
       "challenge_id": "enterprise",
       "challenge_name": "Enterprise",
       "category": "web",
-      "team_id": "smoke-team-001",
+      "team_id": "tesdua-team-001",
       "team_name": "Stress Team 001",
-      "user_id": "smoke-team-001-user-2",
-      "username": "smoke-team-001-user-2",
+      "user_id": "tesdua-team-001-user-2",
+      "username": "tesdua-team-001-user-2",
       "status": "running",
-      "public_url": "34.126.116.188:44294",
+      "public_url": "34.126.116.188:58185",
       "public_urls": {
-        "10077": "34.126.116.188:44294"
+        "10077": "34.126.116.188:58185"
       }
     },
     {
-      "instance_id": "enterprise-smoke-team-005-f6caf15c",
+      "instance_id": "enterprise-tesdua-team-005-52bbd5f6",
       "challenge_id": "enterprise",
       "challenge_name": "Enterprise",
       "category": "web",
-      "team_id": "smoke-team-005",
+      "team_id": "tesdua-team-005",
       "team_name": "Stress Team 005",
-      "user_id": "smoke-team-005-user-1",
-      "username": "smoke-team-005-user-1",
+      "user_id": "tesdua-team-005-user-1",
+      "username": "tesdua-team-005-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:25335",
+      "public_url": "34.126.116.188:38778",
       "public_urls": {
-        "10077": "34.126.116.188:25335"
+        "10077": "34.126.116.188:38778"
       }
     },
     {
-      "instance_id": "example-web-smoke-team-007-53b793d0",
+      "instance_id": "example-pwn-tesdua-team-006-078fd44a",
+      "challenge_id": "example-pwn",
+      "challenge_name": "Example PWN Challenge",
+      "category": "pwn",
+      "team_id": "tesdua-team-006",
+      "team_name": "Stress Team 006",
+      "user_id": "tesdua-team-006-user-1",
+      "username": "tesdua-team-006-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:19073",
+      "public_urls": {
+        "9999": "34.126.116.188:19073"
+      }
+    },
+    {
+      "instance_id": "example-web-tesdua-team-007-118fcffb",
       "challenge_id": "example-web",
       "challenge_name": "Example Web Challenge",
       "category": "web",
-      "team_id": "smoke-team-007",
+      "team_id": "tesdua-team-007",
       "team_name": "Stress Team 007",
-      "user_id": "smoke-team-007-user-1",
-      "username": "smoke-team-007-user-1",
+      "user_id": "tesdua-team-007-user-1",
+      "username": "tesdua-team-007-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:54544",
+      "public_url": "34.126.116.188:15006",
       "public_urls": {
-        "80": "34.126.116.188:54544"
+        "80": "34.126.116.188:15006"
       }
     },
     {
-      "instance_id": "enterprise-smoke-team-008-853e4796",
+      "instance_id": "enterprise-tesdua-team-008-21c3efe3",
       "challenge_id": "enterprise",
       "challenge_name": "Enterprise",
       "category": "web",
-      "team_id": "smoke-team-008",
+      "team_id": "tesdua-team-008",
       "team_name": "Stress Team 008",
-      "user_id": "smoke-team-008-user-1",
-      "username": "smoke-team-008-user-1",
+      "user_id": "tesdua-team-008-user-1",
+      "username": "tesdua-team-008-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:50040",
+      "public_url": "34.126.116.188:38549",
       "public_urls": {
-        "10077": "34.126.116.188:50040"
+        "10077": "34.126.116.188:38549"
       }
     },
     {
-      "instance_id": "example-web-smoke-team-010-263fcbb8",
+      "instance_id": "example-pwn-tesdua-team-009-2137cea5",
+      "challenge_id": "example-pwn",
+      "challenge_name": "Example PWN Challenge",
+      "category": "pwn",
+      "team_id": "tesdua-team-009",
+      "team_name": "Stress Team 009",
+      "user_id": "tesdua-team-009-user-1",
+      "username": "tesdua-team-009-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:43077",
+      "public_urls": {
+        "9999": "34.126.116.188:43077"
+      }
+    },
+    {
+      "instance_id": "example-web-tesdua-team-010-4ff657af",
       "challenge_id": "example-web",
       "challenge_name": "Example Web Challenge",
       "category": "web",
-      "team_id": "smoke-team-010",
+      "team_id": "tesdua-team-010",
       "team_name": "Stress Team 010",
-      "user_id": "smoke-team-010-user-1",
-      "username": "smoke-team-010-user-1",
+      "user_id": "tesdua-team-010-user-1",
+      "username": "tesdua-team-010-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:25406",
+      "public_url": "34.126.116.188:51072",
       "public_urls": {
-        "80": "34.126.116.188:25406"
+        "80": "34.126.116.188:51072"
       }
     }
   ],
   "spawn_failures": [
     {
-      "team_id": "smoke-team-002",
+      "team_id": "tesdua-team-002",
       "slot_number": 2,
       "challenge_id": "example-pwn",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     },
     {
-      "team_id": "smoke-team-003",
+      "team_id": "tesdua-team-003",
       "slot_number": 2,
       "challenge_id": "example-web",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     },
     {
-      "team_id": "smoke-team-004",
+      "team_id": "tesdua-team-004",
       "slot_number": 2,
       "challenge_id": "enterprise",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     },
     {
-      "team_id": "smoke-team-003",
-      "slot_number": 1,
-      "challenge_id": "example-pwn",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 400: Failed to start instance: Service 'pwn' cannot use security_opt"
-    },
-    {
-      "team_id": "smoke-team-005",
+      "team_id": "tesdua-team-005",
       "slot_number": 2,
       "challenge_id": "example-pwn",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     },
     {
-      "team_id": "smoke-team-006",
+      "team_id": "tesdua-team-006",
       "slot_number": 2,
       "challenge_id": "example-web",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     },
     {
-      "team_id": "smoke-team-007",
+      "team_id": "tesdua-team-007",
       "slot_number": 2,
       "challenge_id": "enterprise",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     },
     {
-      "team_id": "smoke-team-006",
-      "slot_number": 1,
-      "challenge_id": "example-pwn",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 400: Failed to start instance: Service 'pwn' cannot use security_opt"
-    },
-    {
-      "team_id": "smoke-team-008",
+      "team_id": "tesdua-team-008",
       "slot_number": 2,
       "challenge_id": "example-pwn",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     },
     {
-      "team_id": "smoke-team-009",
+      "team_id": "tesdua-team-009",
       "slot_number": 2,
       "challenge_id": "example-web",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     },
     {
-      "team_id": "smoke-team-009",
-      "slot_number": 1,
-      "challenge_id": "example-pwn",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 400: Failed to start instance: Service 'pwn' cannot use security_opt"
-    },
-    {
-      "team_id": "smoke-team-010",
+      "team_id": "tesdua-team-010",
       "slot_number": 2,
       "challenge_id": "enterprise",
       "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
     }
   ],
   "result": {
-    "completed_at": "2026-05-16T11:02:21.444009+00:00",
+    "completed_at": "2026-05-16T12:32:12.532769+00:00",
     "base_url": "http://34.126.116.188:8000",
-    "effective_team_prefix": "smoke",
-    "spawned_count": 8,
-    "spawn_failed_count": 12,
-    "spawn_duration_seconds": 38.9,
+    "effective_team_prefix": "tesdua",
+    "spawned_count": 11,
+    "spawn_failed_count": 9,
+    "spawn_duration_seconds": 41.4,
     "traffic": {
-      "http_attempts": 1362,
-      "http_successes": 1011,
-      "http_failures": 351,
-      "tcp_attempts": 0,
-      "tcp_successes": 0,
-      "tcp_failures": 0,
-      "bytes_sent": 0,
-      "bytes_received": 373042
+      "http_attempts": 594,
+      "http_successes": 350,
+      "http_failures": 244,
+      "tcp_attempts": 380,
+      "tcp_successes": 260,
+      "tcp_failures": 120,
+      "bytes_sent": 1560,
+      "bytes_received": 127319
     },
     "instance_snapshot": {
-      "total": 8,
+      "total": 11,
       "status_counts": {
-        "running": 8
+        "running": 11
       }
     },
     "pcap_snapshot": {
       "mode": "all",
-      "instance_count": 13,
-      "file_count": 14,
-      "total_size_mb": 1.39
+      "instance_count": 95,
+      "file_count": 347,
+      "total_size_mb": 9.78
     },
     "cleanup": {
-      "deleted": 8,
+      "deleted": 11,
       "failed": 0
     },
     "state_file": "stress-test-state.json"

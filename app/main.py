@@ -955,16 +955,28 @@ async def spawn_instance(
     if not docker_manager.is_challenge_active(request.challenge_id):
         raise HTTPException(status_code=403, detail="This challenge is currently inactive")
     
-    success, message, instance = await docker_manager.spawn_instance(
-        challenge_id=request.challenge_id,
-        user_id=user.user_id,
-        username=user.username,
-        user_info=user,
-        team_mode=team_mode
-    )
-    
-    # Log the event
     logger = get_event_logger()
+    try:
+        success, message, instance = await docker_manager.spawn_instance(
+            challenge_id=request.challenge_id,
+            user_id=user.user_id,
+            username=user.username,
+            user_info=user,
+            team_mode=team_mode
+        )
+    except Exception as exc:
+        message = f"Internal spawn error: {exc}"
+        await logger.log_instance_spawn_failed(
+            user_id=user.user_id,
+            username=user.username,
+            challenge_id=request.challenge_id,
+            reason=message,
+            ip_address=client_ip,
+            docker_error=message,
+        )
+        raise HTTPException(status_code=500, detail=message)
+
+    # Log the event
     if success and instance:
         await logger.log_instance_spawn(
             user_id=user.user_id,
@@ -1383,16 +1395,28 @@ async def admin_spawn_instance(
         is_admin=True,
     )
 
-    success, message, instance = await docker_manager.spawn_instance(
-        challenge_id=request.challenge_id,
-        user_id=user_info.user_id,
-        username=user_info.username,
-        user_info=user_info,
-        team_mode=team_mode,
-    )
-
     logger = get_event_logger()
     client_ip = get_client_ip(req)
+    try:
+        success, message, instance = await docker_manager.spawn_instance(
+            challenge_id=request.challenge_id,
+            user_id=user_info.user_id,
+            username=user_info.username,
+            user_info=user_info,
+            team_mode=team_mode,
+        )
+    except Exception as exc:
+        message = f"Internal spawn error: {exc}"
+        await logger.log_instance_spawn_failed(
+            user_id=user_info.user_id,
+            username=user_info.username,
+            challenge_id=request.challenge_id,
+            reason=message,
+            ip_address=client_ip,
+            docker_error=message,
+        )
+        raise HTTPException(status_code=500, detail=message)
+
     if success and instance:
         await logger.log_instance_spawn(
             user_id=user_info.user_id,
