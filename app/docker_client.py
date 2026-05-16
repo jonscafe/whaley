@@ -121,16 +121,31 @@ class DockerClient:
 
     def _choose_available_subnet(self) -> ipaddress.IPv4Network:
         """Choose the next available subnet from Whaley's managed address pool."""
+        return self.choose_available_subnets(1)[0]
+
+    def choose_available_subnets(self, count: int) -> List[ipaddress.IPv4Network]:
+        """Choose one or more available subnets from Whaley's managed pool."""
+        count = max(0, int(count))
+        if count == 0:
+            return []
+
         pool, prefix = self._configured_subnet_pool()
         used = self._used_pool_subnets(pool)
+        chosen: List[ipaddress.IPv4Network] = []
 
         for candidate in pool.subnets(new_prefix=prefix):
-            if not any(candidate.overlaps(existing) for existing in used):
-                return candidate
+            if any(candidate.overlaps(existing) for existing in used):
+                continue
+            if any(candidate.overlaps(existing) for existing in chosen):
+                continue
+            chosen.append(candidate)
+            if len(chosen) == count:
+                return chosen
 
         raise DockerError(
             "No free Docker network subnets remain in "
-            f"{settings.NETWORK_SUBNET_BASE} (/{settings.NETWORK_SUBNET_PREFIX})"
+            f"{settings.NETWORK_SUBNET_BASE} (/{settings.NETWORK_SUBNET_PREFIX}); "
+            f"needed {count}, found {len(chosen)}"
         )
     
     # ==================== Network Operations ====================

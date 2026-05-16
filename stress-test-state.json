@@ -1,0 +1,284 @@
+{
+  "created_at": "2026-05-16T11:02:21.444109+00:00",
+  "base_url": "http://34.126.116.188:8000",
+  "mode": "completed",
+  "args": {
+    "base_url": "http://34.126.116.188:8000",
+    "admin_key": "<redacted>",
+    "team_count": 10,
+    "team_prefix": "smoke",
+    "instances_per_team": 2,
+    "spawn_concurrency": 8,
+    "admin_qps": 2.0,
+    "traffic_seconds": 120,
+    "traffic_workers": 16,
+    "http_paths": [],
+    "tcp_payload": "PING\r\n",
+    "traffic_sleep_floor": 0.05,
+    "traffic_sleep_ceiling": 0.2,
+    "monitor_interval": 15.0,
+    "request_timeout": 180.0,
+    "skip_traffic": false,
+    "cleanup": true,
+    "cleanup_from_state": "",
+    "state_file": "stress-test-state.json"
+  },
+  "effective_team_prefix": "smoke",
+  "challenges": [
+    {
+      "id": "example-web",
+      "name": "Example Web Challenge",
+      "category": "web",
+      "ports": [
+        80
+      ]
+    },
+    {
+      "id": "enterprise",
+      "name": "Enterprise",
+      "category": "web",
+      "ports": [
+        10077
+      ]
+    },
+    {
+      "id": "example-pwn",
+      "name": "Example PWN Challenge",
+      "category": "pwn",
+      "ports": [
+        9999
+      ]
+    }
+  ],
+  "instances": [
+    {
+      "instance_id": "example-web-smoke-team-001-d3a6a52a",
+      "challenge_id": "example-web",
+      "challenge_name": "Example Web Challenge",
+      "category": "web",
+      "team_id": "smoke-team-001",
+      "team_name": "Stress Team 001",
+      "user_id": "smoke-team-001-user-1",
+      "username": "smoke-team-001-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:43806",
+      "public_urls": {
+        "80": "34.126.116.188:43806"
+      }
+    },
+    {
+      "instance_id": "enterprise-smoke-team-002-0593c88a",
+      "challenge_id": "enterprise",
+      "challenge_name": "Enterprise",
+      "category": "web",
+      "team_id": "smoke-team-002",
+      "team_name": "Stress Team 002",
+      "user_id": "smoke-team-002-user-1",
+      "username": "smoke-team-002-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:38941",
+      "public_urls": {
+        "10077": "34.126.116.188:38941"
+      }
+    },
+    {
+      "instance_id": "example-web-smoke-team-004-0c9faaba",
+      "challenge_id": "example-web",
+      "challenge_name": "Example Web Challenge",
+      "category": "web",
+      "team_id": "smoke-team-004",
+      "team_name": "Stress Team 004",
+      "user_id": "smoke-team-004-user-1",
+      "username": "smoke-team-004-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:36178",
+      "public_urls": {
+        "80": "34.126.116.188:36178"
+      }
+    },
+    {
+      "instance_id": "enterprise-smoke-team-001-41c1b002",
+      "challenge_id": "enterprise",
+      "challenge_name": "Enterprise",
+      "category": "web",
+      "team_id": "smoke-team-001",
+      "team_name": "Stress Team 001",
+      "user_id": "smoke-team-001-user-2",
+      "username": "smoke-team-001-user-2",
+      "status": "running",
+      "public_url": "34.126.116.188:44294",
+      "public_urls": {
+        "10077": "34.126.116.188:44294"
+      }
+    },
+    {
+      "instance_id": "enterprise-smoke-team-005-f6caf15c",
+      "challenge_id": "enterprise",
+      "challenge_name": "Enterprise",
+      "category": "web",
+      "team_id": "smoke-team-005",
+      "team_name": "Stress Team 005",
+      "user_id": "smoke-team-005-user-1",
+      "username": "smoke-team-005-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:25335",
+      "public_urls": {
+        "10077": "34.126.116.188:25335"
+      }
+    },
+    {
+      "instance_id": "example-web-smoke-team-007-53b793d0",
+      "challenge_id": "example-web",
+      "challenge_name": "Example Web Challenge",
+      "category": "web",
+      "team_id": "smoke-team-007",
+      "team_name": "Stress Team 007",
+      "user_id": "smoke-team-007-user-1",
+      "username": "smoke-team-007-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:54544",
+      "public_urls": {
+        "80": "34.126.116.188:54544"
+      }
+    },
+    {
+      "instance_id": "enterprise-smoke-team-008-853e4796",
+      "challenge_id": "enterprise",
+      "challenge_name": "Enterprise",
+      "category": "web",
+      "team_id": "smoke-team-008",
+      "team_name": "Stress Team 008",
+      "user_id": "smoke-team-008-user-1",
+      "username": "smoke-team-008-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:50040",
+      "public_urls": {
+        "10077": "34.126.116.188:50040"
+      }
+    },
+    {
+      "instance_id": "example-web-smoke-team-010-263fcbb8",
+      "challenge_id": "example-web",
+      "challenge_name": "Example Web Challenge",
+      "category": "web",
+      "team_id": "smoke-team-010",
+      "team_name": "Stress Team 010",
+      "user_id": "smoke-team-010-user-1",
+      "username": "smoke-team-010-user-1",
+      "status": "running",
+      "public_url": "34.126.116.188:25406",
+      "public_urls": {
+        "80": "34.126.116.188:25406"
+      }
+    }
+  ],
+  "spawn_failures": [
+    {
+      "team_id": "smoke-team-002",
+      "slot_number": 2,
+      "challenge_id": "example-pwn",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    },
+    {
+      "team_id": "smoke-team-003",
+      "slot_number": 2,
+      "challenge_id": "example-web",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    },
+    {
+      "team_id": "smoke-team-004",
+      "slot_number": 2,
+      "challenge_id": "enterprise",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    },
+    {
+      "team_id": "smoke-team-003",
+      "slot_number": 1,
+      "challenge_id": "example-pwn",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 400: Failed to start instance: Service 'pwn' cannot use security_opt"
+    },
+    {
+      "team_id": "smoke-team-005",
+      "slot_number": 2,
+      "challenge_id": "example-pwn",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    },
+    {
+      "team_id": "smoke-team-006",
+      "slot_number": 2,
+      "challenge_id": "example-web",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    },
+    {
+      "team_id": "smoke-team-007",
+      "slot_number": 2,
+      "challenge_id": "enterprise",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    },
+    {
+      "team_id": "smoke-team-006",
+      "slot_number": 1,
+      "challenge_id": "example-pwn",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 400: Failed to start instance: Service 'pwn' cannot use security_opt"
+    },
+    {
+      "team_id": "smoke-team-008",
+      "slot_number": 2,
+      "challenge_id": "example-pwn",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    },
+    {
+      "team_id": "smoke-team-009",
+      "slot_number": 2,
+      "challenge_id": "example-web",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    },
+    {
+      "team_id": "smoke-team-009",
+      "slot_number": 1,
+      "challenge_id": "example-pwn",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 400: Failed to start instance: Service 'pwn' cannot use security_opt"
+    },
+    {
+      "team_id": "smoke-team-010",
+      "slot_number": 2,
+      "challenge_id": "enterprise",
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+    }
+  ],
+  "result": {
+    "completed_at": "2026-05-16T11:02:21.444009+00:00",
+    "base_url": "http://34.126.116.188:8000",
+    "effective_team_prefix": "smoke",
+    "spawned_count": 8,
+    "spawn_failed_count": 12,
+    "spawn_duration_seconds": 38.9,
+    "traffic": {
+      "http_attempts": 1362,
+      "http_successes": 1011,
+      "http_failures": 351,
+      "tcp_attempts": 0,
+      "tcp_successes": 0,
+      "tcp_failures": 0,
+      "bytes_sent": 0,
+      "bytes_received": 373042
+    },
+    "instance_snapshot": {
+      "total": 8,
+      "status_counts": {
+        "running": 8
+      }
+    },
+    "pcap_snapshot": {
+      "mode": "all",
+      "instance_count": 13,
+      "file_count": 14,
+      "total_size_mb": 1.39
+    },
+    "cleanup": {
+      "deleted": 8,
+      "failed": 0
+    },
+    "state_file": "stress-test-state.json"
+  }
+}

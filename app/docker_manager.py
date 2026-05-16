@@ -594,7 +594,8 @@ class DockerManager:
         self,
         compose_file: Path,
         challenge_id: str,
-        network_name: Optional[str] = None
+        network_name: Optional[str] = None,
+        instance_id: Optional[str] = None
     ) -> None:
         """
         Enforce maximum resource limits into a docker-compose file.
@@ -657,6 +658,7 @@ class DockerManager:
                     'external': True,
                     'name': network_name
                 }
+                self._assign_compose_network_subnets(compose_data, instance_id or challenge_id)
                 modified = True
 
             if modified:
@@ -667,6 +669,44 @@ class DockerManager:
         except Exception as e:
             print(f"Warning: Failed to prepare compose file: {e}")
             raise
+
+    def _assign_compose_network_subnets(self, compose_data: Dict, instance_id: str) -> None:
+        """Assign explicit Whaley-managed subnets to compose-created networks."""
+        networks = compose_data.get('networks')
+        if not isinstance(networks, dict):
+            return
+
+        network_names: List[str] = []
+        for network_name, network_config in list(networks.items()):
+            if network_name == 'whaley_instance':
+                continue
+            if network_config is None:
+                networks[network_name] = {}
+                network_config = networks[network_name]
+            if not isinstance(network_config, dict):
+                continue
+            if network_config.get('external'):
+                continue
+            if network_config.get('ipam'):
+                self._set_network_label(network_config, 'whaley.managed', 'true')
+                self._set_network_label(network_config, 'whaley.instance_id', instance_id)
+                continue
+            network_names.append(network_name)
+
+        if not network_names:
+            return
+
+        subnets = self.docker.choose_available_subnets(len(network_names))
+        for network_name, subnet in zip(network_names, subnets):
+            network_config = networks[network_name]
+            network_config['ipam'] = {
+                'config': [
+                    {'subnet': str(subnet)}
+                ]
+            }
+            self._set_network_label(network_config, 'whaley.managed', 'true')
+            self._set_network_label(network_config, 'whaley.instance_id', instance_id)
+            self._set_network_label(network_config, 'whaley.subnet', str(subnet))
 
     @staticmethod
     def _validate_local_path_reference(owner: str, field_name: str, value: str, *, reject_urls: bool = False) -> None:
@@ -739,9 +779,24 @@ class DockerManager:
         if str(service_config.get('privileged', '')).strip().lower() == 'true':
             raise ValueError(f"Service '{service_name}' cannot run in privileged mode")
 
-        for key in ('volumes_from', 'devices', 'device_cgroup_rules', 'cap_add', 'security_opt'):
+        for key in ('volumes_from', 'devices', 'device_cgroup_rules', 'cap_add'):
             if service_config.get(key):
                 raise ValueError(f"Service '{service_name}' cannot use {key}")
+
+        security_opt = service_config.get('security_opt')
+        if security_opt:
+            allowed_security_opts = {'no-new-privileges:true'}
+            if isinstance(security_opt, str):
+                security_opts = [security_opt]
+            elif isinstance(security_opt, list):
+                security_opts = security_opt
+            else:
+                raise ValueError(f"Service '{service_name}' cannot use security_opt")
+
+            for option in security_opts:
+                normalized = str(option).strip().lower()
+                if normalized not in allowed_security_opts:
+                    raise ValueError(f"Service '{service_name}' cannot use security_opt={option}")
 
         for key in ('network_mode', 'pid', 'ipc', 'userns_mode', 'cgroupns_mode', 'uts'):
             value = service_config.get(key)
@@ -857,6 +912,36 @@ class DockerManager:
             return
 
         service_config['labels'] = {key: value}
+
+    @staticmethod
+    def _set_network_label(network_config: Dict, key: str, value: str) -> None:
+        """Set one compose network label while preserving list/dict label style."""
+        labels = network_config.get('labels')
+        if labels is None:
+            network_config['labels'] = {key: value}
+            return
+
+        if isinstance(labels, dict):
+            labels[key] = value
+            return
+
+        label_value = f"{key}={value}"
+        if isinstance(labels, list):
+            prefix = f"{key}="
+            updated = False
+            new_labels = []
+            for label in labels:
+                if isinstance(label, str) and (label == key or label.startswith(prefix)):
+                    new_labels.append(label_value)
+                    updated = True
+                else:
+                    new_labels.append(label)
+            if not updated:
+                new_labels.append(label_value)
+            network_config['labels'] = new_labels
+            return
+
+        network_config['labels'] = {key: value}
 
     def _inject_whaley_labels_into_compose(self, compose_file: Path, instance: Instance) -> None:
         """Add Whaley ownership labels so stale compose projects can be found later."""
@@ -1108,7 +1193,8 @@ class DockerManager:
                 self._enforce_resource_limits(
                     compose_file,
                     instance.challenge_id,
-                    network_name=network_name
+                    network_name=network_name,
+                    instance_id=instance.instance_id,
                 )
                 self._inject_pcap_sidecar(
                     compose_file,
@@ -1327,7 +1413,12 @@ class DockerManager:
         now = utcnow()
         expired = [
             i for i in self.instances.values()
-            if i.expires_at < now and i.status == InstanceStatus.RUNNING
+            if i.expires_at < now
+            and i.status in {
+                InstanceStatus.STARTING,
+                InstanceStatus.RUNNING,
+                InstanceStatus.ERROR,
+            }
         ]
 
         for instance in expired:

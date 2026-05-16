@@ -67,8 +67,8 @@
 - **Real-Time Metrics** — Live CPU/RAM usage per container
 - **Prometheus Metrics** — Protected `/metrics` endpoint for external scraping
 - **Instance Forensics** — Capture logs on termination or on-demand
-- **Native Packet Capture** — Per-instance tcpdump sidecar, searchable flows, payload viewer, and raw PCAP download
-- **Admin Dashboard** — Web UI for monitoring and management, including manual spawn/destroy
+- **Native Packet Capture** — Per-instance tcpdump sidecar, searchable flows, payload viewer, lazy PCAP indexing, and raw PCAP download
+- **Admin Dashboard** — Web UI for monitoring and management, including manual spawn/destroy and paginated high-volume views
 - **Per-Instance Logs & Metrics** — Inspect Docker logs and CPU/RAM/network/block I/O from the dashboard
 - **Challenge Manager** — Upload & edit challenges without SSH
 - **Challenge Toggle** — Activate/deactivate challenges from admin panel
@@ -176,6 +176,8 @@ CONTAINER_PIDS_LIMIT=256          # Max PIDs per container (fork bomb protection
 
 > 🔐 **Admin access**: In `AUTH_MODE=ctfd`, Whaley validates the submitted CTFd access token with CTFd's `/api/v1/users/me`, then fetches `/api/v1/users/{id}` and only enables `/admin` when that detailed user record has `type: "admin"`. In `AUTH_MODE=none`, admin APIs use the local `ADMIN_KEY` fallback.
 
+> 🌐 **Subnet pool**: Whaley uses `NETWORK_SUBNET_BASE` / `NETWORK_SUBNET_PREFIX` for both its per-instance isolation network and compose-defined challenge networks. This keeps multi-network challenges from exhausting Docker's default address pools during large events.
+
 > 📈 **Prometheus metrics**: Set `METRICS_SECRET` to enable `/metrics`. Scrape with either `Authorization: Bearer <secret>` or `X-Metrics-Secret: <secret>`.
 
 > 📖 **Full configuration guide**: See [DOCUMENTATION.md](DOCUMENTATION.md#configuration)
@@ -225,7 +227,7 @@ services:
 
 > ⚠️ **Resource enforcement**: Even if a challenge sets `mem_limit: 2g`, Whaley will cap it to the global `CONTAINER_MAX_MEMORY` (default `384m`). You can set per-challenge overrides via the admin panel.
 
-> 🛡️ **Compose hardening**: Whaley prepares every spawn from a per-instance copy, attaches the instance network automatically, and rejects dangerous compose options such as `privileged`, `network_mode`, host/container namespace sharing, added capabilities/devices, Docker socket mounts, external networks/volumes, unsafe build/env file paths, symlinks, and bind mounts that escape the challenge directory.
+> 🛡️ **Compose hardening**: Whaley prepares every spawn from a per-instance copy, attaches the instance network automatically, and rejects dangerous compose options such as `privileged`, `network_mode`, host/container namespace sharing, added capabilities/devices, unsafe security options, Docker socket mounts, external networks/volumes, unsafe build/env file paths, symlinks, and bind mounts that escape the challenge directory. The hardening-safe `security_opt: ["no-new-privileges:true"]` option is allowed.
 
 > 📖 **More examples**: See [DOCUMENTATION.md](DOCUMENTATION.md#challenge-structure)
 
@@ -293,6 +295,55 @@ Ports Required = Peak Instances × Ports per Challenge
 > - RAM: 200 MB + 280 × 264 MB = **~74 GB**
 > - PCAP storage: 280 × 10 MB/hr × 12 hr = **~34 GB**
 > - Ports: 280 × 1.5 avg = **420 ports**
+
+---
+
+## 🧪 Stress Testing
+
+Whaley includes a reusable stress harness at [scripts/stress_test.py](/mnt/c/1Jonathan/CTFS/research-dir/whaley/scripts/stress_test.py). It discovers active challenges from `/challenges`, spawns synthetic team-owned instances through the admin API, generates mixed HTTP/TCP traffic, samples admin and PCAP status, and can optionally clean up the instances it created.
+
+Quick smoke test:
+
+```bash
+pip install -r requirements.txt
+
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --team-count 10 \
+  --instances-per-team 2 \
+  --traffic-seconds 120 \
+  --traffic-workers 16 \
+  --team-prefix smoke \
+  --cleanup
+```
+
+Larger rehearsal:
+
+```bash
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --team-count 160 \
+  --instances-per-team 2 \
+  --traffic-seconds 900 \
+  --traffic-workers 64 \
+  --spawn-concurrency 8 \
+  --admin-qps 2.0 \
+  --team-prefix fullrun \
+  --state-file /tmp/whaley-stress.json
+```
+
+Cleanup later from saved state:
+
+```bash
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --cleanup-from-state /tmp/whaley-stress.json
+```
+
+The full runbook, caveats for `AUTH_MODE=none`, and tuning guidance live in [DOCUMENTATION.md](DOCUMENTATION.md#-stress-testing).
 
 ---
 
@@ -393,6 +444,7 @@ For comprehensive documentation, see **[DOCUMENTATION.md](DOCUMENTATION.md)**:
 - 🔍 [Resource Monitoring](DOCUMENTATION.md#resource-monitoring)
 - 📡 [Prometheus Metrics](DOCUMENTATION.md#prometheus-metrics)
 - 📊 [Capacity Planning](DOCUMENTATION.md#capacity-planning)
+- 🧪 [Stress Testing](DOCUMENTATION.md#-stress-testing)
 - ⚙️ [Admin Settings & Challenge Management](DOCUMENTATION.md#admin-settings)
 
 ---

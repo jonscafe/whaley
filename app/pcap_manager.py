@@ -267,31 +267,43 @@ class PacketCaptureManager:
             files = self._pcap_files(instance_dir.name)
             if not files:
                 continue
-            try:
-                summary = self.get_summary(instance_dir.name)
-            except Exception as exc:
-                summary = PcapSummary(
-                    instance_id=instance_dir.name,
-                    challenge_id="unknown",
-                    challenge_name="Unknown Challenge",
-                    owner_id="unknown",
-                    owner_name="unknown",
-                    pcap_files=[path.name for path in files],
-                    total_size_bytes=sum(path.stat().st_size for path in files if path.exists()),
-                    flow_count=0,
-                    first_packet=None,
-                    last_packet=None,
-                    protocol_breakdown={},
-                )
-                instances.append({
-                    **asdict(summary),
-                    "parse_error": str(exc),
-                })
-                continue
-            instances.append(asdict(summary))
+
+            metadata = self._metadata_for_instance(instance_dir.name)
+            total_size = 0
+            newest_mtime = 0.0
+            for path in files:
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                total_size += stat.st_size
+                newest_mtime = max(newest_mtime, stat.st_mtime)
+
+            instances.append({
+                "instance_id": instance_dir.name,
+                "challenge_id": metadata.get("challenge_id", "unknown"),
+                "challenge_name": metadata.get("challenge_name", "Unknown Challenge"),
+                "owner_id": metadata.get("owner_id", "unknown"),
+                "owner_name": metadata.get("owner_name", "unknown"),
+                "pcap_files": [path.name for path in files[:10]],
+                "pcap_files_truncated": len(files) > 10,
+                "total_size_bytes": total_size,
+                "flow_count": None,
+                "first_packet": None,
+                "last_packet": None,
+                "protocol_breakdown": {},
+                "file_count": len(files),
+                "flow_count_with_flags": None,
+                "spawned_by": metadata.get("spawned_by"),
+                "created_at": metadata.get("created_at"),
+                "team_id": metadata.get("team_id"),
+                "team_name": metadata.get("team_name"),
+                "last_updated": _iso_from_ts(newest_mtime) if newest_mtime else metadata.get("created_at"),
+                "parsed": False,
+            })
 
         instances.sort(
-            key=lambda item: item.get("last_packet") or item.get("created_at") or "",
+            key=lambda item: item.get("last_updated") or item.get("created_at") or "",
             reverse=True,
         )
         return instances

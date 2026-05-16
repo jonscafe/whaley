@@ -16,6 +16,7 @@ Complete documentation for the CTF Docker Instancer.
 - [Development](#-development)
 - [Production Infrastructure](#-production-infrastructure)
 - [Capacity Planning](#-capacity-planning--server-requirements)
+- [Stress Testing](#-stress-testing)
 - [Instance Forensics](#-instance-forensics-docker-log-capture)
 - [Native Packet Capture](#-native-packet-capture)
 - [Resource Monitoring](#-resource-monitoring)
@@ -216,7 +217,7 @@ services:
 
 Whaley starts each instance from a per-instance copy of the challenge directory. This keeps dynamic flag injection, resource-limit rewrites, and bind-mounted challenge files stable until the instance is stopped.
 
-Whaley also validates compose files before startup and rejects options that would bypass isolation, including `privileged`, `network_mode`, host/container namespaces, added capabilities/devices, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, absolute/home/environment-expanded bind sources, and bind paths containing `..`.
+Whaley also validates compose files before startup and rejects options that would bypass isolation, including `privileged`, `network_mode`, host/container namespaces, added capabilities/devices, unsafe security options, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, absolute/home/environment-expanded bind sources, and bind paths containing `..`. The hardening-safe `security_opt: ["no-new-privileges:true"]` option is allowed.
 
 ### Tips for Challenge Authors
 
@@ -597,6 +598,7 @@ The admin dashboard has these tabs:
 
 ### 5. Packet Capture
 - 📡 **Capture Status** - Toggle packet capture for future spawns and track storage usage
+- 📚 **Paginated Capture List** - Browse many captured instances without parsing every PCAP at tab load
 - 🔎 **Flow Explorer** - Filter/search flows by protocol, flag tags, and payload content
 - 💾 **Raw PCAP Download** - Export rotated `.pcap` files for offline Wireshark analysis
 - 🧹 **Retention Cleanup** - Manually prune captures older than the configured retention window
@@ -815,6 +817,7 @@ Each instance runs in its own isolated Docker bridge network.
 - 🛡️ Prevents lateral movement attacks between challenges
 - 🧪 Automatic network cleanup on instance termination
 - 🧱 Compose files are attached to the per-instance external network automatically
+- 🌐 Compose-defined challenge networks receive explicit Whaley-managed subnets
 
 **Configuration:**
 ```env
@@ -826,6 +829,10 @@ NETWORK_ICC_DISABLED=true
 
 # Network name prefix
 NETWORK_PREFIX=whaley
+
+# Address pool used for Whaley isolation networks and compose-created challenge networks
+NETWORK_SUBNET_BASE=10.240.0.0/16
+NETWORK_SUBNET_PREFIX=28
 ```
 
 ### Deployment Modes
@@ -865,8 +872,8 @@ services:
 | `NETWORK_ISOLATION_ENABLED` | `true` | Create isolated network per instance |
 | `NETWORK_ICC_DISABLED` | `true` | Disable inter-container communication |
 | `NETWORK_PREFIX` | `whaley` | Prefix for instance networks |
-| `NETWORK_SUBNET_BASE` | `10.240.0.0/16` | Whaley-managed address pool for per-instance bridge networks |
-| `NETWORK_SUBNET_PREFIX` | `28` | Prefix length allocated from `NETWORK_SUBNET_BASE` for each instance |
+| `NETWORK_SUBNET_BASE` | `10.240.0.0/16` | Whaley-managed address pool for per-instance isolation networks and compose-created challenge networks |
+| `NETWORK_SUBNET_PREFIX` | `28` | Prefix length allocated from `NETWORK_SUBNET_BASE` for each Docker bridge network |
 | `ADMIN_RATE_LIMIT` | `150` | Admin API requests allowed per minute per client IP |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1` | Trusted reverse proxies for forwarded client IP headers |
 | `METRICS_SECRET` | - | Secret required for Prometheus `/metrics`; empty disables endpoint |
@@ -966,7 +973,7 @@ Peak Instances = Hard Cap × Concurrency Factor (0.5-0.8)
 Total RAM = Base Overhead + (Peak Instances × Avg Instance RAM)
 Total Disk = Docker Images + (PCAP Instances × PCAP Rate/hr × Event Hours)
 Ports Required = Peak Instances × Ports per Challenge
-Networks Required = Peak Instances (1 network per instance)
+Networks Required = Peak Instances × (1 isolation network + compose-defined networks)
 ```
 
 #### Example: National CTF (150 teams, Team Mode)
@@ -986,7 +993,7 @@ Peak Load Calculation:
 - Peak instances: 300 × 0.7 = ~210 instances
 - RAM: 200 MB + (210 × 264 MB) = ~56 GB
 - Ports: 210 × 2 = 420 ports
-- Networks: 210 isolated networks
+- Networks: 210 isolated networks, plus any compose-defined challenge networks
 - PCAP storage: 210 × 10 MB/hr × 10 hr = ~21 GB
 - Forensics logs: ~1500 terminates × 30 KB = ~45 MB
 - SQLite size: ~10 MB (event logs + port mappings)
@@ -1081,6 +1088,115 @@ PCAP_RETENTION_HOURS=12
 PCAP_SNAP_LEN=512
 ```
 
+## 🧪 Stress Testing
+
+Whaley ships with a reusable stress harness at [scripts/stress_test.py](/mnt/c/1Jonathan/CTFS/research-dir/whaley/scripts/stress_test.py). The script is aimed at rehearsal runs against a live deployment and focuses on the places where event infra usually starts to creak:
+
+- challenge discovery from `/challenges`
+- synthetic team-owned spawns through `/admin/api/instances/spawn`
+- mixed HTTP and raw TCP traffic against the spawned instances
+- periodic snapshots from `/admin/api/instances` and `/admin/api/pcap/status`
+- optional cleanup through `/admin/api/instances/{id}`
+
+### Why Use the Admin API in `AUTH_MODE=none`
+
+In `AUTH_MODE=none`, Whaley identifies normal users by client IP. If you drive the public `/instances/spawn` API from one machine, Whaley will mostly see one user instead of hundreds of simulated teams. The stress harness avoids that blind spot by using the admin spawn API and assigning synthetic `team_id` / `team_name` values to each spawned owner.
+
+### Prerequisites
+
+Install the Python dependencies first:
+
+```bash
+pip install -r requirements.txt
+```
+
+You also need:
+
+- a deployment where the supplied `ADMIN_KEY` works
+- active challenges visible from `/challenges`
+- enough free ports, RAM, and disk for the rehearsal you are about to run
+
+### Quick Smoke Test
+
+This is the safest first pass. It creates a small batch of instances, drives light traffic for two minutes, and tears everything down automatically.
+
+```bash
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --team-count 10 \
+  --instances-per-team 2 \
+  --traffic-seconds 120 \
+  --traffic-workers 16 \
+  --team-prefix smoke \
+  --cleanup
+```
+
+### Large Rehearsal
+
+This shape is closer to a serious pre-event soak:
+
+```bash
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --team-count 160 \
+  --instances-per-team 2 \
+  --traffic-seconds 900 \
+  --traffic-workers 64 \
+  --spawn-concurrency 8 \
+  --admin-qps 2.0 \
+  --team-prefix fullrun \
+  --state-file /tmp/whaley-stress.json
+```
+
+What those knobs do:
+
+- `--team-count`: number of synthetic teams to simulate
+- `--instances-per-team`: unique challenges per team; this must not exceed the number of discovered active challenges
+- `--traffic-seconds`: soak duration after the spawn phase
+- `--traffic-workers`: concurrent traffic loops
+- `--spawn-concurrency`: max in-flight admin spawn/stop requests from the harness
+- `--admin-qps`: pacing for admin mutations so you do not immediately collide with admin rate limiting
+- `--team-prefix`: gives each run a unique synthetic owner namespace
+- `--state-file`: saves created instance IDs so cleanup can be retried later
+
+### Cleanup Later
+
+If you omit `--cleanup`, the script saves created instances into the state file. You can stop them later with:
+
+```bash
+WHALEY_BASE_URL=http://your-server:8000 \
+WHALEY_ADMIN_KEY=your-admin-key \
+python3 scripts/stress_test.py \
+  --cleanup-from-state /tmp/whaley-stress.json
+```
+
+### Suggested Progression
+
+Run the rehearsal in stages instead of jumping straight to the ugliest case:
+
+1. `10 teams x 2 instances` with `--cleanup`
+2. `40 teams x 2 instances`, longer traffic, still auto-cleanup
+3. `160 teams x 2 instances` without cleanup so you can inspect metrics and PCAP growth
+4. cleanup from the saved state file
+
+This keeps basic spawn bugs separate from long-run pressure like disk growth, sidecar instability, or Docker network churn.
+
+### What to Watch During the Run
+
+- `/admin/api/instances`: total instance count and `starting/running/error` mix
+- `/admin/api/pcap/status`: capture instance count, file count, and `total_size_mb`
+- `/metrics`: Prometheus counters and gauges for instance lifecycle, ports, and storage
+- Docker host memory, CPU, and disk usage
+- sidecar restarts or `OOMKilled` flags on `whaley-pcap` containers
+
+### Tuning Notes
+
+- Keep `--spawn-concurrency` close to Whaley's internal spawn semaphore. The default is 10 concurrent spawns, so values like `8` or `10` are a good fit.
+- If admin requests start returning `429`, lower `--admin-qps` or temporarily raise `ADMIN_RATE_LIMIT`.
+- The script discovers challenges dynamically from `/challenges`, so inactive challenges are skipped automatically.
+- Traffic generation is intentionally generic. For deeper realism, extend the harness with challenge-specific HTTP paths or protocol payloads.
 
 
 ### Resource Limits per Challenge
@@ -1705,7 +1821,7 @@ PCAP_BPF_FILTER=not (host 127.0.0.11 and port 53)
 
 - New instances get a `whaley-pcap` sidecar that shares the instance network namespace
 - Captures are rotated into per-instance directories, compressed after rotation, and kept after the instance stops
-- The admin dashboard parses flows on demand with `scapy`
+- The admin dashboard lists captures from lightweight metadata and parses flows on demand with `scapy`
 - Packet-capture sidecars are excluded from the regular per-instance logs/metrics views so the challenge containers stay front and center
 
 ### Using the dashboard
@@ -2000,7 +2116,7 @@ Then configure Prometheus to scrape Whaley, cAdvisor, and Node Exporter for long
 2. **Admin RBAC** - In CTFd mode, use CTFd admin users for `/admin`; in no-auth mode protect `ADMIN_KEY` like a password
 3. **Resource Limits** - Set proper `mem_limit` and `cpus` in challenges; Whaley also enforces global caps
 4. **Network Isolation** - Keep per-instance network isolation enabled for production
-5. **Compose Hardening** - Challenge compose files cannot use privileged mode, host/container namespaces, custom `network_mode`, added capabilities/devices, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, or bind mounts outside the challenge directory
+5. **Compose Hardening** - Challenge compose files cannot use privileged mode, host/container namespaces, custom `network_mode`, added capabilities/devices, unsafe security options, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, or bind mounts outside the challenge directory. `security_opt: ["no-new-privileges:true"]` is allowed.
 6. **Trusted Proxies** - Configure `TRUSTED_PROXIES` when using no-auth mode behind a reverse proxy so client identity cannot be spoofed with forwarded headers
 7. **Timeouts** - Set reasonable instance timeouts
 8. **Rate Limiting** - Admin APIs have built-in per-IP limits; add edge rate limiting for public endpoints in high-traffic events

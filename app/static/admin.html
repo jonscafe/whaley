@@ -1423,6 +1423,7 @@
                         <div id="all-instances-list">
                             <div class="loading">Loading instances...</div>
                         </div>
+                        <div id="pagination-dashboard-instances" class="pagination-container"></div>
                     </div>
                 </section>
             </div>
@@ -1559,6 +1560,7 @@
 
                         <div id="ports-summary" style="margin-top: 16px; color: var(--text-muted); font-size: 0.9rem;">
                         </div>
+                        <div id="pagination-user-ports" class="pagination-container"></div>
                     </div>
                 </section>
 
@@ -1741,10 +1743,11 @@
                                 </label>
                                 <input type="text" id="pcap-instance-search"
                                     placeholder="Search by instance, owner, or challenge..."
-                                    oninput="renderPcapInstances()">
+                                    oninput="pcapInstancesPage=1; renderPcapInstances()">
                                 <div id="pcap-instance-list" class="pcap-instance-list">
                                     <div class="empty-state">Loading packet captures...</div>
                                 </div>
+                                <div id="pagination-pcap-instances" class="pagination-container"></div>
                             </aside>
 
                             <div class="pcap-main-panel">
@@ -2213,10 +2216,17 @@
         let pcapStatusCache = null;
         let pcapPolicyCache = null;
         let pcapInstancesCache = [];
+        let allInstancesCache = [];
         let selectedPcapInstanceId = null;
         let selectedPcapSummary = null;
         let pcapFlowsCache = [];
         let selectedPcapFlowId = null;
+        const DASHBOARD_INSTANCES_PAGE_SIZE = 20;
+        const USER_PORTS_PAGE_SIZE = 50;
+        const PCAP_INSTANCES_PAGE_SIZE = 25;
+        let dashboardInstancesPage = 1;
+        let userPortsPage = 1;
+        let pcapInstancesPage = 1;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -2515,10 +2525,22 @@
             try {
                 const data = await adminApi('/admin/api/instances');
                 const instances = data.instances || [];
+                allInstancesCache = instances;
                 const counts = data.status_counts || {};
                 document.getElementById('stat-status-running').textContent = counts.running || 0;
                 document.getElementById('stat-status-starting').textContent = counts.starting || 0;
                 document.getElementById('stat-status-errors').textContent = counts.error || 0;
+                renderAllInstances();
+
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state">Failed to load instances: ${escapeHtml(error.message)}</div>`;
+                updatePagination('dashboard-instances', 0, 0, 0);
+            }
+        }
+
+        function renderAllInstances() {
+            const container = document.getElementById('all-instances-list');
+            const instances = allInstancesCache || [];
 
                 if (instances.length === 0) {
                     container.innerHTML = `
@@ -2527,10 +2549,17 @@
                             <p>No active instances</p>
                         </div>
                     `;
+                    updatePagination('dashboard-instances', 0, 0, 0);
                     return;
                 }
 
-                container.innerHTML = instances.map(instance => {
+                const totalPages = Math.ceil(instances.length / DASHBOARD_INSTANCES_PAGE_SIZE);
+                dashboardInstancesPage = Math.max(1, Math.min(dashboardInstancesPage, totalPages));
+                const start = (dashboardInstancesPage - 1) * DASHBOARD_INSTANCES_PAGE_SIZE;
+                const end = start + DASHBOARD_INSTANCES_PAGE_SIZE;
+                const pageItems = instances.slice(start, end);
+
+                container.innerHTML = pageItems.map(instance => {
                     const portsStr = Object.entries(instance.ports || {})
                         .map(([i, e]) => `${i}→${e}`)
                         .join(', ');
@@ -2573,9 +2602,7 @@
                     `;
                 }).join('');
 
-            } catch (error) {
-                container.innerHTML = `<div class="empty-state">Failed to load instances: ${escapeHtml(error.message)}</div>`;
-            }
+                updatePagination('dashboard-instances', dashboardInstancesPage, totalPages, instances.length);
         }
 
         async function loadManualSpawnOptions() {
@@ -2992,6 +3019,7 @@ ${rows}
             try {
                 const data = await adminApi('/admin/api/user-ports');
                 allUserPorts = data.user_ports || {};
+                userPortsPage = 1;
 
                 renderUserPorts();
 
@@ -3008,6 +3036,7 @@ ${rows}
             } catch (error) {
                 tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Failed to load user ports</td></tr>';
                 summary.textContent = '';
+                updatePagination('user-ports', 0, 0, 0);
             }
         }
 
@@ -3056,12 +3085,19 @@ ${rows}
 
             if (rows.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No port mappings found</td></tr>';
+                updatePagination('user-ports', 0, 0, 0);
             } else {
-                tbody.innerHTML = rows.join('');
+                const totalPages = Math.ceil(rows.length / USER_PORTS_PAGE_SIZE);
+                userPortsPage = Math.max(1, Math.min(userPortsPage, totalPages));
+                const start = (userPortsPage - 1) * USER_PORTS_PAGE_SIZE;
+                const end = start + USER_PORTS_PAGE_SIZE;
+                tbody.innerHTML = rows.slice(start, end).join('');
+                updatePagination('user-ports', userPortsPage, totalPages, rows.length);
             }
         }
 
         function filterUserPorts() {
+            userPortsPage = 1;
             renderUserPorts();
         }
 
@@ -3660,10 +3696,17 @@ ${rows}
 
             if (!items.length) {
                 container.innerHTML = '<div class="empty-state">No matching capture instances</div>';
+                updatePagination('pcap-instances', 0, 0, 0);
                 return;
             }
 
-            container.innerHTML = items.map(item => `
+            const totalPages = Math.ceil(items.length / PCAP_INSTANCES_PAGE_SIZE);
+            pcapInstancesPage = Math.max(1, Math.min(pcapInstancesPage, totalPages));
+            const start = (pcapInstancesPage - 1) * PCAP_INSTANCES_PAGE_SIZE;
+            const end = start + PCAP_INSTANCES_PAGE_SIZE;
+            const pageItems = items.slice(start, end);
+
+            container.innerHTML = pageItems.map(item => `
                 <div class="pcap-instance-item ${item.instance_id === selectedPcapInstanceId ? 'active' : ''}"
                     onclick="selectPcapInstance(${jsArg(item.instance_id)})">
                     <div class="pcap-instance-title">
@@ -3674,12 +3717,13 @@ ${rows}
                     </div>
                     <div class="pcap-instance-meta">
                         <span>${escapeHtml(item.owner_name || 'unknown')}</span>
-                        <span>${item.flow_count || 0} flows</span>
+                        <span>${item.flow_count == null ? `${item.file_count || 0} files` : `${item.flow_count || 0} flows`}</span>
                         <span>${formatBytes(item.total_size_bytes || 0)}</span>
                     </div>
                     ${item.parse_error ? `<div style="margin-top: 8px; color: var(--accent-danger); font-size: 0.8rem;">${escapeHtml(item.parse_error)}</div>` : ''}
                 </div>
             `).join('');
+            updatePagination('pcap-instances', pcapInstancesPage, totalPages, items.length);
         }
 
         async function selectPcapInstance(instanceId) {
@@ -4430,6 +4474,18 @@ ${rows}
                 case 'challenge-mapping':
                     challengeMappingsPage += delta;
                     renderChallengeMappingsFromCache();
+                    break;
+                case 'dashboard-instances':
+                    dashboardInstancesPage += delta;
+                    renderAllInstances();
+                    break;
+                case 'user-ports':
+                    userPortsPage += delta;
+                    renderUserPorts();
+                    break;
+                case 'pcap-instances':
+                    pcapInstancesPage += delta;
+                    renderPcapInstances();
                     break;
             }
         }
