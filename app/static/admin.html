@@ -451,6 +451,28 @@
             color: var(--text-secondary);
         }
 
+        .instance-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .instance-modal-pre {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            line-height: 1.5;
+            max-height: 60vh;
+            overflow: auto;
+            padding: 12px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         .refresh-indicator {
             font-size: 0.8rem;
             color: var(--text-muted);
@@ -541,11 +563,11 @@
             border-radius: 50%;
         }
 
-        .toggle-switch input:checked + .toggle-slider {
+        .toggle-switch input:checked+.toggle-slider {
             background-color: var(--accent-success);
         }
 
-        .toggle-switch input:checked + .toggle-slider:before {
+        .toggle-switch input:checked+.toggle-slider:before {
             transform: translateX(18px);
         }
 
@@ -936,6 +958,313 @@
         .sync-action-select {
             min-width: 150px;
         }
+
+        .pcap-layout {
+            display: grid;
+            grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+            gap: 16px;
+            align-items: start;
+        }
+
+        .pcap-sidebar,
+        .pcap-main-panel,
+        .pcap-detail-card,
+        .pcap-chart-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+        }
+
+        .pcap-sidebar {
+            padding: 16px;
+            position: sticky;
+            top: 16px;
+        }
+
+        .pcap-instance-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 780px;
+            overflow-y: auto;
+            margin-top: 12px;
+        }
+
+        .pcap-instance-item {
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-primary);
+            cursor: pointer;
+            transition: border-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .pcap-instance-item:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-1px);
+        }
+
+        .pcap-instance-item.active {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+        }
+
+        .pcap-instance-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .pcap-instance-meta,
+        .pcap-summary-meta,
+        .pcap-flow-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+
+        .pcap-main-panel {
+            padding: 16px;
+        }
+
+        .pcap-toolbar {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, auto));
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .pcap-toolbar input,
+        .pcap-toolbar select,
+        .pcap-sidebar input {
+            width: 100%;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .pcap-toolbar-main {
+            grid-column: span 2;
+        }
+
+        .pcap-summary {
+            margin-bottom: 16px;
+            padding: 14px 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+        }
+
+        .pcap-selected-challenges {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 10px;
+        }
+
+        .pcap-policy-item {
+            display: flex;
+            align-items: start;
+            gap: 10px;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-primary);
+        }
+
+        .pcap-policy-item.active {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+        }
+
+        .pcap-policy-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .pcap-policy-copy code {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+        }
+
+        .pcap-chart-card {
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .pcap-chart-wrap {
+            display: grid;
+            grid-template-columns: 180px minmax(0, 1fr);
+            gap: 16px;
+            align-items: center;
+        }
+
+        .pcap-chart-legend {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+
+        .pcap-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-secondary);
+        }
+
+        .pcap-legend-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            flex: 0 0 auto;
+        }
+
+        .pcap-chart-empty {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .pcap-flow-row {
+            cursor: pointer;
+        }
+
+        .pcap-flow-row.active td {
+            background: rgba(99, 102, 241, 0.14);
+        }
+
+        .pcap-badge,
+        .pcap-tag {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .pcap-badge-http,
+        .pcap-tag-http {
+            background: rgba(16, 185, 129, 0.16);
+            color: #34d399;
+        }
+
+        .pcap-badge-https,
+        .pcap-tag-https {
+            background: rgba(34, 197, 94, 0.16);
+            color: #4ade80;
+        }
+
+        .pcap-badge-tcp,
+        .pcap-tag-tcp {
+            background: rgba(59, 130, 246, 0.16);
+            color: #60a5fa;
+        }
+
+        .pcap-badge-udp,
+        .pcap-tag-udp {
+            background: rgba(168, 85, 247, 0.16);
+            color: #c084fc;
+        }
+
+        .pcap-tag-contains-flag {
+            background: rgba(239, 68, 68, 0.18);
+            color: #f87171;
+        }
+
+        .pcap-tag-http_port {
+            background: rgba(245, 158, 11, 0.16);
+            color: #fbbf24;
+        }
+
+        .pcap-tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .pcap-detail-card {
+            margin-top: 16px;
+            padding: 16px;
+        }
+
+        .pcap-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .pcap-detail-panel {
+            min-height: 220px;
+            padding: 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+        }
+
+        .pcap-pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            line-height: 1.45;
+            color: var(--text-secondary);
+            max-height: 460px;
+            overflow: auto;
+        }
+
+        .pcap-packets-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        .pcap-packets-table th,
+        .pcap-packets-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .pcap-packets-table th {
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 0.72rem;
+        }
+
+        @media (max-width: 1100px) {
+
+            .pcap-layout,
+            .pcap-chart-wrap,
+            .pcap-detail-grid,
+            .pcap-toolbar {
+                grid-template-columns: 1fr;
+            }
+
+            .pcap-sidebar {
+                position: static;
+            }
+
+            .pcap-toolbar-main {
+                grid-column: auto;
+            }
+        }
     </style>
 </head>
 
@@ -958,7 +1287,8 @@
                 <h2 id="admin-auth-title">🔐 Admin Authentication</h2>
             </div>
             <div class="card-body">
-                <p class="auth-description" id="admin-auth-description">Enter your CTFd access token to access the dashboard.</p>
+                <p class="auth-description" id="admin-auth-description">Enter your CTFd access token to access the
+                    dashboard.</p>
                 <div class="auth-form">
                     <div class="input-group">
                         <label for="admin-key" id="admin-key-label">CTFd Access Token</label>
@@ -1040,6 +1370,43 @@
                                 <div class="stat-value" id="stat-mode">-</div>
                                 <div class="stat-label">Instance Mode</div>
                             </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-status-running">0</div>
+                                <div class="stat-label">Running</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-status-starting">0</div>
+                                <div class="stat-label">Starting</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-status-errors">0</div>
+                                <div class="stat-label">Errors</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Manual Spawn Section -->
+                <section class="card instances-section">
+                    <div class="card-header">
+                        <h2>🛠️ Manual Instance Control</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="loadManualSpawnOptions()">
+                            <span class="btn-icon">🔄</span> Reload Challenges
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="log-filters">
+                            <select id="manual-spawn-challenge" style="min-width: 220px;">
+                                <option value="">Loading challenges...</option>
+                            </select>
+                            <input type="text" id="manual-spawn-user-id" placeholder="Owner user ID"
+                                value="admin-manual">
+                            <input type="text" id="manual-spawn-username" placeholder="Owner username" value="admin">
+                            <input type="text" id="manual-spawn-team-id" placeholder="Team ID (optional)">
+                            <input type="text" id="manual-spawn-team-name" placeholder="Team name (optional)">
+                            <button class="btn btn-primary btn-sm" onclick="adminSpawnInstance()">
+                                🚀 Spawn
+                            </button>
                         </div>
                     </div>
                 </section>
@@ -1075,6 +1442,9 @@
                     <button class="btn btn-secondary btn-sm sub-tab" data-subtab="forensics"
                         onclick="switchLogTab('forensics')">
                         🔍 Instance Forensics
+                    </button>
+                    <button class="btn btn-secondary btn-sm sub-tab" data-subtab="pcap" onclick="switchLogTab('pcap')">
+                        📡 Packet Capture
                     </button>
                 </div>
 
@@ -1308,6 +1678,157 @@
                         </div>
 
                         <div id="pagination-forensics" class="pagination-container"></div>
+                    </div>
+                </section>
+
+                <!-- Native Packet Capture Section -->
+                <section class="card log-section hidden" id="section-pcap">
+                    <div class="card-header">
+                        <h2>📡 Packet Capture</h2>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <select id="pcap-mode-select" onchange="changePcapPolicyMode()"
+                                title="Packet capture policy for future instance spawns">
+                                <option value="all">Capture All</option>
+                                <option value="selected">Capture Selected</option>
+                                <option value="none">Capture Disabled</option>
+                            </select>
+                            <span style="font-size: 0.85rem; color: var(--text-muted);" id="pcap-enabled-label">Capture
+                                all new instances</span>
+                            <button class="btn btn-danger btn-sm" onclick="cleanupPcaps()" style="margin-left: 16px;">
+                                <span class="btn-icon">🧹</span> Cleanup Old
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="loadPcapData(true)">
+                                <span class="btn-icon">🔄</span> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-grid" style="margin-bottom: 20px;">
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-pcap-status">ALL</div>
+                                <div class="stat-label">Capture Status</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-pcap-instances">0</div>
+                                <div class="stat-label">Instances With PCAPs</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-pcap-size">0 MB</div>
+                                <div class="stat-label">Storage Used</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value" id="stat-pcap-retention">0h</div>
+                                <div class="stat-label">Retention</div>
+                            </div>
+                        </div>
+
+                        <div id="pcap-selected-panel" class="pcap-detail-card hidden" style="margin-bottom: 20px;">
+                            <div class="pcap-flow-meta" style="margin-bottom: 12px;">
+                                <strong>Selected Challenges</strong>
+                                <span id="pcap-selected-summary" style="color: var(--text-muted);">Choose which
+                                    challenge spawns should get packet capture.</span>
+                            </div>
+                            <div id="pcap-selected-challenges" class="pcap-selected-challenges">
+                                <div class="empty-state">Loading challenge selection…</div>
+                            </div>
+                        </div>
+
+                        <div class="pcap-layout">
+                            <aside class="pcap-sidebar">
+                                <label
+                                    style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.85rem;">
+                                    Instances with captures
+                                </label>
+                                <input type="text" id="pcap-instance-search"
+                                    placeholder="Search by instance, owner, or challenge..."
+                                    oninput="renderPcapInstances()">
+                                <div id="pcap-instance-list" class="pcap-instance-list">
+                                    <div class="empty-state">Loading packet captures...</div>
+                                </div>
+                            </aside>
+
+                            <div class="pcap-main-panel">
+                                <div class="pcap-toolbar">
+                                    <select id="pcap-flow-protocol" onchange="loadPcapFlows()">
+                                        <option value="">All Protocols</option>
+                                        <option value="HTTP">HTTP</option>
+                                        <option value="HTTPS">HTTPS</option>
+                                        <option value="TCP">TCP</option>
+                                        <option value="UDP">UDP</option>
+                                    </select>
+                                    <label
+                                        style="display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 0.9rem;">
+                                        <input type="checkbox" id="pcap-flagged-only" onchange="loadPcapFlows()">
+                                        Flag only
+                                    </label>
+                                    <input type="text" class="pcap-toolbar-main" id="pcap-search-query"
+                                        placeholder="Search payloads for flags, hosts, tokens..."
+                                        onkeypress="if(event.key==='Enter') searchPcapFlows()">
+                                    <button class="btn btn-secondary btn-sm" onclick="searchPcapFlows()">
+                                        <span class="btn-icon">🔎</span> Search
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="clearPcapSearch()">
+                                        <span class="btn-icon">✕</span> Clear
+                                    </button>
+                                </div>
+
+                                <div id="pcap-instance-summary" class="pcap-summary empty-state">
+                                    Select an instance to inspect packet captures.
+                                </div>
+
+                                <div class="pcap-chart-card">
+                                    <div id="pcap-protocol-chart" class="pcap-chart-empty">
+                                        Protocol breakdown will appear here once an instance is selected.
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px;">
+                                    <button class="btn btn-primary btn-sm" onclick="downloadSelectedPcap()">
+                                        <span class="btn-icon">💾</span> Download Raw Capture
+                                    </button>
+                                </div>
+
+                                <div class="table-wrapper" style="overflow-x: auto;">
+                                    <table class="logs-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Protocol</th>
+                                                <th>Source</th>
+                                                <th>Destination</th>
+                                                <th>Packets</th>
+                                                <th>Bytes</th>
+                                                <th>Tags</th>
+                                                <th>Last Seen</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="pcap-flows-body">
+                                            <tr>
+                                                <td colspan="7" class="empty-state">Select an instance to load flows
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="pcap-detail-card">
+                                    <div class="pcap-flow-meta" id="pcap-flow-meta">
+                                        <span style="color: var(--text-muted);">Choose a flow to inspect packet details
+                                            and follow-stream payloads.</span>
+                                    </div>
+                                    <div class="pcap-detail-grid">
+                                        <div class="pcap-detail-panel">
+                                            <h3 style="margin-top: 0; margin-bottom: 10px;">Payload Stream</h3>
+                                            <pre class="pcap-pre" id="pcap-payload-viewer">No flow selected.</pre>
+                                        </div>
+                                        <div class="pcap-detail-panel">
+                                            <h3 style="margin-top: 0; margin-bottom: 10px;">Packets</h3>
+                                            <div id="pcap-packet-detail" class="pcap-chart-empty">No packets to show.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -1614,8 +2135,10 @@
                     </div>
                     <div class="card-body">
                         <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.85rem;">
-                            Configure Whaley settings directly from the admin panel. Changes are persisted to the database 
-                            and applied immediately. Settings with a <span style="color: var(--accent-primary);">●</span> indicator 
+                            Configure Whaley settings directly from the admin panel. Changes are persisted to the
+                            database
+                            and applied immediately. Settings with a <span
+                                style="color: var(--accent-primary);">●</span> indicator
                             have been overridden from their defaults.
                         </p>
 
@@ -1654,6 +2177,11 @@
                             <h3 class="settings-section-title">🔍 Forensics</h3>
                             <div class="settings-grid" id="settings-forensics"></div>
                         </div>
+
+                        <div class="settings-section">
+                            <h3 class="settings-section-title">📡 Packet Capture</h3>
+                            <div class="settings-grid" id="settings-pcap"></div>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -1662,7 +2190,7 @@
         <!-- Footer -->
         <footer class="footer">
             <p>🔧 Whaley Admin</p>
-            <p class="footer-credit">Made with ❤️ by <a href="https://github.com/jonscafe" target="_blank"
+            <p class="footer-credit">Made with ❤️ by <a href="https://github.com/jonscafe/whaley" target="_blank"
                     rel="noopener">keii</a></p>
         </footer>
     </div>
@@ -1676,11 +2204,19 @@
         let adminRefreshInterval = null;
         let currentPage = 0;
         let currentTab = 'dashboard';
+        let currentLogSubtab = 'events';
         let debounceTimer = null;
         let selectedChallenge = null;
         let selectedChallengeLabel = null;
         let selectedFile = null;
         let unsavedChanges = false;
+        let pcapStatusCache = null;
+        let pcapPolicyCache = null;
+        let pcapInstancesCache = [];
+        let selectedPcapInstanceId = null;
+        let selectedPcapSummary = null;
+        let pcapFlowsCache = [];
+        let selectedPcapFlowId = null;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -1831,10 +2367,18 @@
         async function loadPageData(page) {
             switch (page) {
                 case 'dashboard':
-                    await Promise.all([loadStats(), loadAllInstances()]);
+                    await Promise.all([loadStats(), loadAllInstances(), loadManualSpawnOptions()]);
                     break;
                 case 'logs':
-                    await loadLogs();
+                    if (currentLogSubtab === 'ports') {
+                        await loadUserPorts();
+                    } else if (currentLogSubtab === 'forensics') {
+                        await loadForensicsLogs();
+                    } else if (currentLogSubtab === 'pcap') {
+                        await loadPcapData();
+                    } else {
+                        await loadLogs();
+                    }
                     break;
                 case 'flags':
                     await loadFlagsData();
@@ -1931,6 +2475,12 @@
                     statsData.event_counts?.instance_spawn || 0;
                 document.getElementById('stat-active-instances').textContent =
                     statsData.active_instances || 0;
+                document.getElementById('stat-status-running').textContent =
+                    statsData.running_instances || 0;
+                document.getElementById('stat-status-starting').textContent =
+                    statsData.starting_instances || 0;
+                document.getElementById('stat-status-errors').textContent =
+                    statsData.error_instances || 0;
                 document.getElementById('stat-unique-users').textContent =
                     statsData.unique_users || 0;
                 document.getElementById('stat-24h-events').textContent =
@@ -1965,6 +2515,10 @@
             try {
                 const data = await adminApi('/admin/api/instances');
                 const instances = data.instances || [];
+                const counts = data.status_counts || {};
+                document.getElementById('stat-status-running').textContent = counts.running || 0;
+                document.getElementById('stat-status-starting').textContent = counts.starting || 0;
+                document.getElementById('stat-status-errors').textContent = counts.error || 0;
 
                 if (instances.length === 0) {
                     container.innerHTML = `
@@ -1981,25 +2535,36 @@
                         .map(([i, e]) => `${i}→${e}`)
                         .join(', ');
 
-                    // Use username if available, fallback to user_id
-                    const displayName = instance.username || instance.user_id;
+                    const displayName = instance.owner_name || instance.team_name || instance.username || instance.user_id;
+                    const challengeName = instance.challenge_name || instance.challenge_id;
+                    const expiresIn = Number.isFinite(instance.seconds_until_expiry)
+                        ? formatDuration(instance.seconds_until_expiry)
+                        : 'unknown';
 
                     return `
                         <div class="instance-admin-card">
                             <div class="instance-admin-info">
                                 <div class="instance-admin-header">
-                                    <span class="instance-name">${escapeHtml(instance.challenge_id)}</span>
-                                    <span class="instance-status status-${instance.status}">${instance.status}</span>
+                                    <span class="instance-name">${escapeHtml(challengeName)}</span>
+                                    <span class="instance-status status-${escapeHtml(instance.status)}">${escapeHtml(instance.status)}</span>
                                     <span class="challenge-category category-web">${instance.instance_id}</span>
                                 </div>
                                 <div class="instance-admin-details">
-                                    <span>👤 User: <strong>${escapeHtml(displayName)}</strong></span>
-                                    <span>🔌 Ports: <code>${portsStr}</code></span>
-                                    <span>🌐 URL: <code>${instance.public_url || 'N/A'}</code></span>
-                                    <span>⏰ Expires: ${formatTime(instance.expires_at)}</span>
+                                    <span>👤 ${escapeHtml(instance.owner_type || 'user')}: <strong>${escapeHtml(displayName)}</strong></span>
+                                    <span>🔌 Ports: <code>${escapeHtml(portsStr || 'none')}</code></span>
+                                    <span>🌐 URL: <code>${escapeHtml(instance.public_url || 'N/A')}</code></span>
+                                    <span>📦 Containers: ${instance.container_count || 0}</span>
+                                    <span>⏰ Expires: ${formatTime(instance.expires_at)} (${escapeHtml(expiresIn)})</span>
+                                    ${instance.error_message ? `<span style="color: var(--accent-danger);">⚠️ ${escapeHtml(instance.error_message)}</span>` : ''}
                                 </div>
                             </div>
                             <div class="instance-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="showInstanceMetrics(${jsArg(instance.instance_id)})">
+                                    📈 Metrics
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="showInstanceLogs(${jsArg(instance.instance_id)})">
+                                    📜 Logs
+                                </button>
                                 <button class="btn btn-danger btn-sm" onclick="adminStopInstance(${jsArg(instance.instance_id)})">
                                     🛑 Force Stop
                                 </button>
@@ -2009,7 +2574,65 @@
                 }).join('');
 
             } catch (error) {
-                container.innerHTML = '<div class="empty-state">Failed to load instances</div>';
+                container.innerHTML = `<div class="empty-state">Failed to load instances: ${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        async function loadManualSpawnOptions() {
+            const select = document.getElementById('manual-spawn-challenge');
+            if (!select) return;
+            const previousValue = select.value;
+
+            try {
+                const data = await adminApi('/admin/api/challenges/list');
+                const challenges = (data.challenges || []).filter(c => c.loaded && c.has_config && c.has_compose);
+                if (!challenges.length) {
+                    select.innerHTML = '<option value="">No loaded challenges</option>';
+                    return;
+                }
+
+                select.innerHTML = [
+                    '<option value="">Select challenge...</option>',
+                    ...challenges.map(challenge => {
+                        const status = challenge.is_active ? '' : ' (inactive)';
+                        const selected = challenge.id === previousValue ? ' selected' : '';
+                        return `<option value="${escapeHtml(challenge.id)}"${selected}>${escapeHtml(challenge.id)}${status}</option>`;
+                    })
+                ].join('');
+            } catch (error) {
+                select.innerHTML = '<option value="">Failed to load challenges</option>';
+            }
+        }
+
+        async function adminSpawnInstance() {
+            const challengeId = document.getElementById('manual-spawn-challenge').value;
+            const userId = document.getElementById('manual-spawn-user-id').value.trim();
+            const username = document.getElementById('manual-spawn-username').value.trim();
+            const teamId = document.getElementById('manual-spawn-team-id').value.trim();
+            const teamName = document.getElementById('manual-spawn-team-name').value.trim();
+
+            if (!challengeId) {
+                showToast('Select a challenge first', 'error');
+                return;
+            }
+            if (!userId) {
+                showToast('Owner user ID is required', 'error');
+                return;
+            }
+
+            try {
+                const data = await adminApi('/admin/api/instances/spawn', 'POST', {
+                    challenge_id: challengeId,
+                    user_id: userId,
+                    username: username || userId,
+                    team_id: teamId || null,
+                    team_name: teamName || null,
+                    team_mode: Boolean(teamId)
+                });
+                showToast(`Spawned ${data.instance?.instance_id || challengeId}`, 'success');
+                await Promise.all([loadAllInstances(), loadStats()]);
+            } catch (error) {
+                showToast(error.message || 'Failed to spawn instance', 'error');
             }
         }
 
@@ -2017,17 +2640,94 @@
             if (!confirm(`Force stop instance ${instanceId}?`)) return;
 
             try {
-                await fetch(`/admin/api/instances/${encodeURIComponent(instanceId)}`, {
-                    method: 'DELETE',
-                    headers: adminHeaders()
-                });
-
+                await adminApi(`/admin/api/instances/${encodeURIComponent(instanceId)}`, 'DELETE');
                 showToast('Instance stopped', 'success');
                 await loadAllInstances();
                 await loadStats();
             } catch (error) {
-                showToast('Failed to stop instance', 'error');
+                showToast(error.message || 'Failed to stop instance', 'error');
             }
+        }
+
+        async function showInstanceLogs(instanceId) {
+            try {
+                const data = await adminApi(`/admin/api/instances/${encodeURIComponent(instanceId)}/logs?tail=300`);
+                const content = data.combined_logs || 'No logs returned';
+                showInstanceModal(
+                    `Logs: ${instanceId}`,
+                    `<pre class="instance-modal-pre">${escapeHtml(content)}</pre>`
+                );
+            } catch (error) {
+                showToast(error.message || 'Failed to load instance logs', 'error');
+            }
+        }
+
+        async function showInstanceMetrics(instanceId) {
+            try {
+                const data = await adminApi(`/admin/api/instances/${encodeURIComponent(instanceId)}/metrics`);
+                const metrics = data.metrics;
+                if (!data.metrics_available || !metrics) {
+                    showInstanceModal(
+                        `Metrics: ${instanceId}`,
+                        `<p style="color: var(--text-muted);">${escapeHtml(data.message || 'Metrics unavailable')}</p>`
+                    );
+                    return;
+                }
+
+                const rows = metrics.containers.map(c => `
+                    ${c.container_name} (${c.container_id})
+                    CPU: ${c.cpu_percent.toFixed(1)}%
+                    RAM: ${c.memory_usage_mb.toFixed(1)} / ${c.memory_limit_mb.toFixed(1)} MB (${c.memory_percent.toFixed(1)}%)
+                    Network: ↓ ${c.network_rx_mb.toFixed(2)} MB / ↑ ${c.network_tx_mb.toFixed(2)} MB
+                    Block IO: read ${c.block_read_mb.toFixed(2)} MB / write ${c.block_write_mb.toFixed(2)} MB
+                    PIDs: ${c.pids}
+                `.trim()).join('\n\n');
+
+                const summary = `
+Instance: ${metrics.instance_id}
+Challenge: ${metrics.challenge_name} (${metrics.challenge_id})
+Owner: ${metrics.owner_name} (${metrics.owner_id})
+Containers: ${metrics.container_count}
+Total CPU: ${metrics.total_cpu_percent.toFixed(1)}%
+Total RAM: ${metrics.total_memory_mb.toFixed(1)} MB
+Updated: ${metrics.timestamp}
+
+${rows}
+                `.trim();
+
+                showInstanceModal(
+                    `Metrics: ${instanceId}`,
+                    `<pre class="instance-modal-pre">${escapeHtml(summary)}</pre>`
+                );
+            } catch (error) {
+                showToast(error.message || 'Failed to load instance metrics', 'error');
+            }
+        }
+
+        function showInstanceModal(title, bodyHtml) {
+            const existing = document.querySelector('.instance-detail-modal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay instance-detail-modal active';
+            modal.onclick = closeInstanceModal;
+            modal.innerHTML = `
+                <div class="modal-content" onclick="event.stopPropagation()">
+                    <div class="modal-header">
+                        <h3>${escapeHtml(title)}</h3>
+                        <button class="modal-close" onclick="closeInstanceModal()">&times;</button>
+                    </div>
+                    <div class="modal-body" style="padding: 16px; overflow: auto;">
+                        ${bodyHtml}
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function closeInstanceModal() {
+            const modal = document.querySelector('.instance-detail-modal');
+            if (modal) modal.remove();
         }
 
         let totalLogs = 0;
@@ -2252,6 +2952,8 @@
         let allUserPorts = {};
 
         function switchLogTab(tab) {
+            currentLogSubtab = tab;
+
             // Update sub-tab buttons
             document.querySelectorAll('.sub-tab').forEach(btn => {
                 btn.classList.remove('active');
@@ -2269,6 +2971,7 @@
             document.getElementById('section-events').classList.toggle('hidden', tab !== 'events');
             document.getElementById('section-ports').classList.toggle('hidden', tab !== 'ports');
             document.getElementById('section-forensics').classList.toggle('hidden', tab !== 'forensics');
+            document.getElementById('section-pcap').classList.toggle('hidden', tab !== 'pcap');
 
             // Load data
             if (tab === 'events') {
@@ -2277,6 +2980,8 @@
                 loadUserPorts();
             } else if (tab === 'forensics') {
                 loadForensicsLogs();
+            } else if (tab === 'pcap') {
+                loadPcapData();
             }
         }
 
@@ -2408,6 +3113,18 @@
             if (!isoString) return '-';
             const date = new Date(isoString);
             return date.toLocaleString();
+        }
+
+        function formatDuration(seconds) {
+            if (!Number.isFinite(seconds)) return '-';
+            const prefix = seconds < 0 ? 'expired ' : '';
+            seconds = Math.abs(Math.trunc(seconds));
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (hours > 0) return `${prefix}${hours}h ${minutes}m`;
+            if (minutes > 0) return `${prefix}${minutes}m ${secs}s`;
+            return `${prefix}${secs}s`;
         }
 
         function escapeHtml(text) {
@@ -2782,6 +3499,567 @@
         }
 
         // =============================================================================
+        // Native Packet Capture Functions
+        // =============================================================================
+
+        async function loadPcapData(forceReloadInstances = false) {
+            try {
+                const [statusData, instancesData, policyData] = await Promise.all([
+                    adminApi('/admin/api/pcap/status'),
+                    adminApi('/admin/api/pcap/instances'),
+                    adminApi('/admin/api/pcap/policy')
+                ]);
+
+                pcapStatusCache = statusData || {};
+                pcapInstancesCache = instancesData.instances || [];
+                pcapPolicyCache = policyData || {};
+
+                renderPcapStatus();
+                renderPcapPolicyChallenges();
+                renderPcapInstances();
+
+                if (!pcapStatusCache.parser_available) {
+                    selectedPcapSummary = null;
+                    pcapFlowsCache = [];
+                    selectedPcapFlowId = null;
+                    document.getElementById('pcap-instance-summary').innerHTML =
+                        '<div class="empty-state">PCAP parsing is unavailable until `scapy` is installed in the Whaley runtime.</div>';
+                    document.getElementById('pcap-protocol-chart').innerHTML =
+                        '<div class="pcap-chart-empty">PCAP protocol breakdown is unavailable.</div>';
+                    document.getElementById('pcap-flows-body').innerHTML =
+                        '<tr><td colspan="7" class="empty-state">PCAP parser unavailable</td></tr>';
+                    document.getElementById('pcap-payload-viewer').textContent = 'PCAP parser unavailable.';
+                    document.getElementById('pcap-packet-detail').innerHTML = '<div class="pcap-chart-empty">PCAP parser unavailable.</div>';
+                    return;
+                }
+
+                if (!pcapInstancesCache.length) {
+                    selectedPcapInstanceId = null;
+                    selectedPcapSummary = null;
+                    pcapFlowsCache = [];
+                    selectedPcapFlowId = null;
+                    document.getElementById('pcap-instance-summary').innerHTML =
+                        '<div class="empty-state">No packet captures have been collected yet.</div>';
+                    document.getElementById('pcap-protocol-chart').innerHTML =
+                        '<div class="pcap-chart-empty">Protocol breakdown will appear here once captures exist.</div>';
+                    document.getElementById('pcap-flows-body').innerHTML =
+                        '<tr><td colspan="7" class="empty-state">No packet capture flows found</td></tr>';
+                    document.getElementById('pcap-payload-viewer').textContent = 'No flow selected.';
+                    document.getElementById('pcap-packet-detail').innerHTML = '<div class="pcap-chart-empty">No packets to show.</div>';
+                    return;
+                }
+
+                const stillSelected = pcapInstancesCache.some(item => item.instance_id === selectedPcapInstanceId);
+                if (!selectedPcapInstanceId || !stillSelected || forceReloadInstances) {
+                    selectedPcapInstanceId = pcapInstancesCache[0].instance_id;
+                    selectedPcapFlowId = null;
+                }
+
+                renderPcapInstances();
+                await Promise.all([
+                    loadPcapInstanceSummary(),
+                    loadPcapFlows()
+                ]);
+            } catch (error) {
+                console.error('Failed to load packet capture data:', error);
+                showToast(error.message || 'Failed to load packet capture data', 'error');
+            }
+        }
+
+        function renderPcapStatus() {
+            const status = pcapStatusCache || {};
+            const policy = pcapPolicyCache || {};
+            const mode = policy.mode || status.mode || 'all';
+            const statusEl = document.getElementById('stat-pcap-status');
+            const labelEl = document.getElementById('pcap-enabled-label');
+            const modeEl = document.getElementById('pcap-mode-select');
+
+            if (statusEl) {
+                statusEl.textContent = mode === 'all' ? 'ALL' : mode === 'selected' ? 'SELECT' : 'OFF';
+                statusEl.style.color = mode === 'none' ? 'var(--text-muted)' : 'var(--accent-success)';
+            }
+
+            if (labelEl) {
+                if (mode === 'all') {
+                    labelEl.textContent = 'Capture all new instances';
+                } else if (mode === 'selected') {
+                    const count = (policy.selected_challenges || []).length;
+                    labelEl.textContent = `Capture only selected challenges (${count})`;
+                } else {
+                    labelEl.textContent = 'Capture disabled for new instances';
+                }
+            }
+
+            if (modeEl) {
+                modeEl.value = mode;
+            }
+
+            document.getElementById('stat-pcap-instances').textContent = status.instance_count || 0;
+            document.getElementById('stat-pcap-size').textContent = `${status.total_size_mb || 0} MB`;
+            document.getElementById('stat-pcap-retention').textContent = `${status.retention_hours || 0}h`;
+        }
+
+        function renderPcapPolicyChallenges() {
+            const panel = document.getElementById('pcap-selected-panel');
+            const container = document.getElementById('pcap-selected-challenges');
+            const summary = document.getElementById('pcap-selected-summary');
+            const policy = pcapPolicyCache || {};
+            const mode = policy.mode || 'all';
+            const selected = new Set(policy.selected_challenges || []);
+            const challenges = policy.available_challenges || [];
+
+            if (!panel || !container || !summary) return;
+
+            if (mode !== 'selected') {
+                panel.classList.add('hidden');
+                return;
+            }
+
+            panel.classList.remove('hidden');
+            summary.textContent = selected.size
+                ? `${selected.size} challenge${selected.size === 1 ? '' : 's'} selected for packet capture. Changes apply to future spawns.`
+                : 'Choose which challenge spawns should get packet capture. Changes apply to future spawns.';
+
+            if (!challenges.length) {
+                container.innerHTML = '<div class="empty-state">No loaded challenges are available for selected-mode capture.</div>';
+                return;
+            }
+
+            container.innerHTML = challenges.map(challenge => {
+                const isChecked = selected.has(challenge.id);
+                return `
+                    <label class="pcap-policy-item ${isChecked ? 'active' : ''}">
+                        <input type="checkbox"
+                            ${isChecked ? 'checked' : ''}
+                            onchange="togglePcapSelectedChallenge(${jsArg(challenge.id)}, this.checked)">
+                        <span class="pcap-policy-copy">
+                            <strong>${escapeHtml(challenge.name || challenge.id)}</strong>
+                            <code>${escapeHtml(challenge.id)}</code>
+                            <span style="color: ${challenge.is_active ? 'var(--accent-success)' : 'var(--accent-danger)'}; font-size: 0.78rem;">
+                                ${challenge.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                        </span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function renderPcapInstances() {
+            const container = document.getElementById('pcap-instance-list');
+            const search = (document.getElementById('pcap-instance-search')?.value || '').toLowerCase().trim();
+            let items = pcapInstancesCache || [];
+
+            if (search) {
+                items = items.filter(item =>
+                    (item.instance_id || '').toLowerCase().includes(search) ||
+                    (item.challenge_name || '').toLowerCase().includes(search) ||
+                    (item.owner_name || '').toLowerCase().includes(search) ||
+                    (item.challenge_id || '').toLowerCase().includes(search)
+                );
+            }
+
+            if (!items.length) {
+                container.innerHTML = '<div class="empty-state">No matching capture instances</div>';
+                return;
+            }
+
+            container.innerHTML = items.map(item => `
+                <div class="pcap-instance-item ${item.instance_id === selectedPcapInstanceId ? 'active' : ''}"
+                    onclick="selectPcapInstance(${jsArg(item.instance_id)})">
+                    <div class="pcap-instance-title">
+                        <span>${escapeHtml(item.challenge_name || item.challenge_id || item.instance_id)}</span>
+                        <span class="pcap-badge ${pcapProtocolBadgeClass(item.protocol_breakdown && Object.keys(item.protocol_breakdown)[0] || 'TCP')}">
+                            ${escapeHtml(item.instance_id)}
+                        </span>
+                    </div>
+                    <div class="pcap-instance-meta">
+                        <span>${escapeHtml(item.owner_name || 'unknown')}</span>
+                        <span>${item.flow_count || 0} flows</span>
+                        <span>${formatBytes(item.total_size_bytes || 0)}</span>
+                    </div>
+                    ${item.parse_error ? `<div style="margin-top: 8px; color: var(--accent-danger); font-size: 0.8rem;">${escapeHtml(item.parse_error)}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        async function selectPcapInstance(instanceId) {
+            if (!instanceId || instanceId === selectedPcapInstanceId) return;
+            selectedPcapInstanceId = instanceId;
+            selectedPcapFlowId = null;
+            renderPcapInstances();
+            await Promise.all([
+                loadPcapInstanceSummary(),
+                loadPcapFlows()
+            ]);
+        }
+
+        async function loadPcapInstanceSummary() {
+            if (!selectedPcapInstanceId) return;
+
+            try {
+                const data = await adminApi(`/admin/api/pcap/instances/${encodeURIComponent(selectedPcapInstanceId)}/summary`);
+                selectedPcapSummary = data.summary || null;
+                renderPcapSummary(selectedPcapSummary);
+                renderPcapProtocolChart(selectedPcapSummary?.protocol_breakdown || {});
+            } catch (error) {
+                selectedPcapSummary = null;
+                document.getElementById('pcap-instance-summary').innerHTML =
+                    `<div class="empty-state">Failed to load capture summary: ${escapeHtml(error.message)}</div>`;
+                document.getElementById('pcap-protocol-chart').innerHTML =
+                    '<div class="pcap-chart-empty">Protocol breakdown unavailable.</div>';
+            }
+        }
+
+        function renderPcapSummary(summary) {
+            const container = document.getElementById('pcap-instance-summary');
+            if (!summary) {
+                container.innerHTML = '<div class="empty-state">Select an instance to inspect packet captures.</div>';
+                return;
+            }
+
+            const files = (summary.pcap_files || []).map(name => `<code>${escapeHtml(name)}</code>`).join(', ');
+            container.innerHTML = `
+                <div class="pcap-instance-title" style="margin-bottom: 10px;">
+                    <span>${escapeHtml(summary.challenge_name || summary.challenge_id)}</span>
+                    <span class="pcap-badge ${pcapProtocolBadgeClass(primaryProtocol(summary.protocol_breakdown || {}))}">
+                        ${escapeHtml(summary.instance_id)}
+                    </span>
+                </div>
+                <div class="pcap-summary-meta">
+                    <span>Owner: <strong>${escapeHtml(summary.owner_name || summary.owner_id)}</strong></span>
+                    <span>Flows: <strong>${summary.flow_count || 0}</strong></span>
+                    <span>Flagged: <strong>${summary.flow_count_with_flags || 0}</strong></span>
+                    <span>Files: <strong>${summary.file_count || 0}</strong></span>
+                    <span>Size: <strong>${formatBytes(summary.total_size_bytes || 0)}</strong></span>
+                    ${summary.first_packet ? `<span>First packet: ${escapeHtml(formatTime(summary.first_packet))}</span>` : ''}
+                    ${summary.last_packet ? `<span>Last packet: ${escapeHtml(formatTime(summary.last_packet))}</span>` : ''}
+                </div>
+                <div style="margin-top: 12px; color: var(--text-muted); font-size: 0.82rem;">
+                    ${files ? `Capture files: ${files}` : 'No rotated PCAP files found.'}
+                </div>
+            `;
+        }
+
+        async function loadPcapFlows() {
+            if (!selectedPcapInstanceId) return;
+
+            const protocol = document.getElementById('pcap-flow-protocol')?.value || '';
+            const flaggedOnly = document.getElementById('pcap-flagged-only')?.checked || false;
+            const query = (document.getElementById('pcap-search-query')?.value || '').trim();
+
+            try {
+                let data;
+                if (query) {
+                    data = await adminApi(`/admin/api/pcap/instances/${encodeURIComponent(selectedPcapInstanceId)}/search?q=${encodeURIComponent(query)}&limit=200`);
+                } else {
+                    const params = new URLSearchParams();
+                    if (protocol) params.set('protocol', protocol);
+                    if (flaggedOnly) params.set('flagged_only', 'true');
+                    params.set('limit', '200');
+                    data = await adminApi(`/admin/api/pcap/instances/${encodeURIComponent(selectedPcapInstanceId)}/flows?${params.toString()}`);
+                }
+
+                pcapFlowsCache = data.flows || [];
+                if (data.summary) {
+                    selectedPcapSummary = data.summary;
+                    renderPcapSummary(selectedPcapSummary);
+                    renderPcapProtocolChart(selectedPcapSummary?.protocol_breakdown || {});
+                }
+
+                renderPcapFlows();
+
+                const stillSelected = pcapFlowsCache.some(flow => flow.flow_id === selectedPcapFlowId);
+                if (!stillSelected) {
+                    selectedPcapFlowId = null;
+                    document.getElementById('pcap-payload-viewer').textContent = 'No flow selected.';
+                    document.getElementById('pcap-packet-detail').innerHTML = '<div class="pcap-chart-empty">No packets to show.</div>';
+                    document.getElementById('pcap-flow-meta').innerHTML =
+                        '<span style="color: var(--text-muted);">Choose a flow to inspect packet details and follow-stream payloads.</span>';
+                }
+            } catch (error) {
+                console.error('Failed to load PCAP flows:', error);
+                document.getElementById('pcap-flows-body').innerHTML =
+                    `<tr><td colspan="7" class="empty-state">Failed to load flows: ${escapeHtml(error.message)}</td></tr>`;
+            }
+        }
+
+        function searchPcapFlows() {
+            loadPcapFlows();
+        }
+
+        function clearPcapSearch() {
+            document.getElementById('pcap-search-query').value = '';
+            loadPcapFlows();
+        }
+
+        function renderPcapFlows() {
+            const tbody = document.getElementById('pcap-flows-body');
+            const flows = pcapFlowsCache || [];
+
+            if (!flows.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No flows match the current filters</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = flows.map(flow => `
+                <tr class="pcap-flow-row ${flow.flow_id === selectedPcapFlowId ? 'active' : ''}"
+                    onclick="selectPcapFlow(${jsArg(flow.flow_id)})">
+                    <td><span class="pcap-badge ${pcapProtocolBadgeClass(flow.protocol)}">${escapeHtml(flow.protocol)}</span></td>
+                    <td><code>${escapeHtml(flow.src_ip)}:${flow.src_port}</code></td>
+                    <td><code>${escapeHtml(flow.dst_ip)}:${flow.dst_port}</code></td>
+                    <td>${flow.packet_count}</td>
+                    <td>${formatBytes(flow.total_bytes)}</td>
+                    <td>${renderPcapTags(flow.tags || [])}</td>
+                    <td>${escapeHtml(formatTime(flow.last_seen) || '-')}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function selectPcapFlow(flowId) {
+            if (!selectedPcapInstanceId || !flowId) return;
+
+            selectedPcapFlowId = flowId;
+            renderPcapFlows();
+
+            try {
+                const [detailData, payloadData] = await Promise.all([
+                    adminApi(`/admin/api/pcap/instances/${encodeURIComponent(selectedPcapInstanceId)}/flows/${encodeURIComponent(flowId)}`),
+                    adminApi(`/admin/api/pcap/instances/${encodeURIComponent(selectedPcapInstanceId)}/flows/${encodeURIComponent(flowId)}/payload`)
+                ]);
+                renderPcapFlowDetail(detailData, payloadData);
+            } catch (error) {
+                showToast(error.message || 'Failed to load flow detail', 'error');
+            }
+        }
+
+        function renderPcapFlowDetail(detailData, payloadData) {
+            const flow = detailData.flow || {};
+            const packets = detailData.packets || [];
+            const payloadText = payloadData.payload_text || 'No payload captured for this flow.';
+
+            document.getElementById('pcap-flow-meta').innerHTML = `
+                <span class="pcap-badge ${pcapProtocolBadgeClass(flow.protocol)}">${escapeHtml(flow.protocol || 'FLOW')}</span>
+                <span><code>${escapeHtml(flow.src_ip || '')}:${flow.src_port || 0}</code> → <code>${escapeHtml(flow.dst_ip || '')}:${flow.dst_port || 0}</code></span>
+                <span>${flow.packet_count || 0} packets</span>
+                <span>${formatBytes(flow.total_bytes || 0)}</span>
+                ${flow.http_method ? `<span>${escapeHtml(flow.http_method)} ${escapeHtml(flow.http_path || '/')}</span>` : ''}
+                ${flow.http_status ? `<span>Status ${flow.http_status}</span>` : ''}
+            `;
+
+            document.getElementById('pcap-payload-viewer').textContent = payloadText;
+
+            if (!packets.length) {
+                document.getElementById('pcap-packet-detail').innerHTML =
+                    '<div class="pcap-chart-empty">No packet previews available for this flow.</div>';
+                return;
+            }
+
+            document.getElementById('pcap-packet-detail').innerHTML = `
+                <div style="overflow:auto; max-height: 460px;">
+                    <table class="pcap-packets-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Dir</th>
+                                <th>Bytes</th>
+                                <th>Summary</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${packets.map(packet => `
+                                <tr>
+                                    <td>${escapeHtml(formatTime(packet.timestamp) || '-')}</td>
+                                    <td>${packet.direction === 'src_to_dst' ? '→' : '←'}</td>
+                                    <td>${packet.payload_size}</td>
+                                    <td>
+                                        <div>${escapeHtml(packet.summary || '')}</div>
+                                        ${packet.payload_preview ? `<pre class="pcap-pre" style="max-height: 140px; margin-top: 8px;">${escapeHtml(packet.payload_preview)}</pre>` : ''}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        async function changePcapPolicyMode() {
+            const modeEl = document.getElementById('pcap-mode-select');
+            const nextMode = modeEl?.value || 'all';
+            const previousMode = pcapPolicyCache?.mode || 'all';
+            const selectedChallenges = Array.from(new Set(pcapPolicyCache?.selected_challenges || []));
+
+            try {
+                const data = await adminApi('/admin/api/pcap/policy', 'PUT', {
+                    mode: nextMode,
+                    selected_challenges: selectedChallenges
+                });
+                showToast(data.message || 'Packet capture policy updated', 'success');
+                await loadPcapData(true);
+            } catch (error) {
+                if (modeEl) modeEl.value = previousMode;
+                showToast(error.message || 'Failed to update packet capture policy', 'error');
+            }
+        }
+
+        async function togglePcapSelectedChallenge(challengeId, checked) {
+            const currentSelected = new Set(pcapPolicyCache?.selected_challenges || []);
+            if (checked) {
+                currentSelected.add(challengeId);
+            } else {
+                currentSelected.delete(challengeId);
+            }
+
+            try {
+                const data = await adminApi('/admin/api/pcap/policy', 'PUT', {
+                    mode: 'selected',
+                    selected_challenges: Array.from(currentSelected)
+                });
+                showToast(data.message || 'Selected challenge captures updated', 'success');
+                await loadPcapData(true);
+            } catch (error) {
+                showToast(error.message || 'Failed to update selected challenge captures', 'error');
+                await loadPcapData();
+            }
+        }
+
+        async function cleanupPcaps() {
+            if (!confirm('Delete packet captures older than the configured retention window?')) return;
+
+            try {
+                const data = await adminApi('/admin/api/pcap/cleanup', 'POST');
+                showToast(data.message || 'Packet capture cleanup complete', 'success');
+                await loadPcapData(true);
+            } catch (error) {
+                showToast(error.message || 'Failed to clean packet captures', 'error');
+            }
+        }
+
+        async function downloadSelectedPcap() {
+            if (!selectedPcapInstanceId) {
+                showToast('Select a capture instance first', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/admin/api/pcap/instances/${encodeURIComponent(selectedPcapInstanceId)}/download`, {
+                    headers: adminHeaders()
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.detail || 'Download failed');
+                }
+
+                const blob = await response.blob();
+                const disposition = response.headers.get('content-disposition') || '';
+                const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+                const filename = filenameMatch ? filenameMatch[1] : `${selectedPcapInstanceId}_pcap.bin`;
+
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                showToast(error.message || 'Failed to download packet capture', 'error');
+            }
+        }
+
+        function renderPcapProtocolChart(breakdown) {
+            const container = document.getElementById('pcap-protocol-chart');
+            const entries = Object.entries(breakdown || {}).filter(([, count]) => Number(count) > 0);
+
+            if (!entries.length) {
+                container.innerHTML = '<div class="pcap-chart-empty">No protocol distribution available for this capture.</div>';
+                return;
+            }
+
+            const colors = {
+                HTTP: '#34d399',
+                HTTPS: '#4ade80',
+                TCP: '#60a5fa',
+                UDP: '#c084fc'
+            };
+            const total = entries.reduce((sum, [, count]) => sum + Number(count || 0), 0);
+            const circumference = 2 * Math.PI * 42;
+            let offset = 0;
+
+            const circles = entries.map(([protocol, count]) => {
+                const value = Number(count || 0);
+                const slice = total > 0 ? (value / total) * circumference : 0;
+                const circle = `
+                    <circle
+                        cx="60" cy="60" r="42"
+                        fill="none"
+                        stroke="${colors[protocol] || '#94a3b8'}"
+                        stroke-width="18"
+                        stroke-linecap="butt"
+                        stroke-dasharray="${slice} ${circumference}"
+                        stroke-dashoffset="${-offset}"
+                        transform="rotate(-90 60 60)"
+                    ></circle>
+                `;
+                offset += slice;
+                return circle;
+            }).join('');
+
+            const legend = entries.map(([protocol, count]) => `
+                <div class="pcap-legend-item">
+                    <span class="pcap-legend-swatch" style="background:${colors[protocol] || '#94a3b8'};"></span>
+                    <span>${escapeHtml(protocol)} · ${count} flow${Number(count) === 1 ? '' : 's'}</span>
+                </div>
+            `).join('');
+
+            container.innerHTML = `
+                <div class="pcap-chart-wrap">
+                    <svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true">
+                        <circle cx="60" cy="60" r="42" fill="none" stroke="rgba(148, 163, 184, 0.16)" stroke-width="18"></circle>
+                        ${circles}
+                        <text x="60" y="56" text-anchor="middle" fill="var(--text-primary)" font-size="20" font-weight="700">${total}</text>
+                        <text x="60" y="76" text-anchor="middle" fill="var(--text-muted)" font-size="12">flows</text>
+                    </svg>
+                    <div class="pcap-chart-legend">${legend}</div>
+                </div>
+            `;
+        }
+
+        function renderPcapTags(tags) {
+            if (!tags || !tags.length) return '<span style="color: var(--text-muted);">—</span>';
+            return `<div class="pcap-tag-list">${tags.map(tag => `
+                <span class="pcap-tag pcap-tag-${escapeHtml(tag).replace(/[^a-z0-9_-]+/gi, '_').toLowerCase()}">${escapeHtml(tag)}</span>
+            `).join('')}</div>`;
+        }
+
+        function primaryProtocol(breakdown) {
+            const entries = Object.entries(breakdown || {});
+            if (!entries.length) return 'TCP';
+            entries.sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
+            return entries[0][0];
+        }
+
+        function pcapProtocolBadgeClass(protocol) {
+            const normalized = String(protocol || 'tcp').toLowerCase();
+            return `pcap-badge-${normalized}`;
+        }
+
+        function formatBytes(value) {
+            const bytes = Number(value || 0);
+            if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let size = bytes;
+            let unitIndex = 0;
+            while (size >= 1024 && unitIndex < units.length - 1) {
+                size /= 1024;
+                unitIndex++;
+            }
+            const digits = size >= 100 || unitIndex === 0 ? 0 : size >= 10 ? 1 : 2;
+            return `${size.toFixed(digits)} ${units[unitIndex]}`;
+        }
+
+        // =============================================================================
         // Dynamic Flags Functions 
         // =============================================================================
 
@@ -2811,7 +4089,7 @@
                 document.getElementById('stat-total-flags').textContent = flagsData.total_flags || 0;
                 document.getElementById('stat-flags-users').textContent = flagsData.total_users || 0;
                 document.getElementById('stat-suspicious').textContent =
-                    (flagsData.suspicious_submissions || []).length;
+                    flagsData.suspicious_total ?? (flagsData.suspicious_submissions || []).length;
 
                 // Store mappings for filtering - sort by created_at descending (newest first)
                 allFlagMappings = (flagsData.flag_mappings || []).sort((a, b) => {
@@ -3429,9 +4707,9 @@
         // =============================================================================
         // Monitoring Functions
         // =============================================================================
-        
+
         let allMonitoringInstances = [];
-        
+
         async function loadMonitoringData() {
             try {
                 // Load system metrics and instance metrics in parallel
@@ -3439,40 +4717,40 @@
                     adminApi('/admin/api/monitoring/system'),
                     adminApi('/admin/api/monitoring/instances')
                 ]);
-                
+
                 // Update system stats
                 document.getElementById('stat-total-containers').textContent = systemData.total_containers;
                 document.getElementById('stat-running-containers').textContent = systemData.running_containers;
                 document.getElementById('stat-total-cpu').textContent = systemData.total_cpu_percent.toFixed(2) + '%';
                 document.getElementById('stat-cpu-cores').textContent = systemData.host_cpu_cores + ' cores available';
                 document.getElementById('stat-total-memory').textContent = systemData.total_memory_mb.toFixed(0) + ' MB';
-                
-                const memPercent = systemData.host_memory_total_mb > 0 
+
+                const memPercent = systemData.host_memory_total_mb > 0
                     ? ((systemData.host_memory_used_mb / systemData.host_memory_total_mb) * 100).toFixed(1)
                     : '0';
-                document.getElementById('stat-host-memory').textContent = 
+                document.getElementById('stat-host-memory').textContent =
                     `${systemData.host_memory_used_mb.toFixed(0)} / ${systemData.host_memory_total_mb.toFixed(0)} MB (${memPercent}%)`;
-                
+
                 // Store and render instances
                 allMonitoringInstances = instancesData.instances || [];
                 renderMonitoringInstances();
-                
+
             } catch (error) {
                 console.error('Failed to load monitoring data:', error);
                 showToast('Failed to load monitoring data', 'error');
             }
         }
-        
+
         function filterMonitoringInstances() {
             renderMonitoringInstances();
         }
-        
+
         function renderMonitoringInstances() {
             const container = document.getElementById('monitoring-instances-container');
             const showHighUsageOnly = document.getElementById('filter-high-usage').checked;
-            
+
             let instances = allMonitoringInstances;
-            
+
             // Filter high usage if checkbox is checked
             if (showHighUsageOnly) {
                 instances = instances.filter(inst => {
@@ -3481,24 +4759,24 @@
                     return highCpu || highMemory;
                 });
             }
-            
+
             if (instances.length === 0) {
                 container.innerHTML = '<p style="text-align: center; padding: 2rem; color: var(--text-muted);">No instances found</p>';
                 return;
             }
-            
+
             // Sort by CPU usage (highest first)
             instances.sort((a, b) => b.total_cpu_percent - a.total_cpu_percent);
-            
+
             const html = instances.map(inst => {
                 const cpuClass = inst.total_cpu_percent > 80 ? 'danger' : inst.total_cpu_percent > 50 ? 'warning' : 'success';
                 const avgMemPercent = inst.containers.reduce((sum, c) => sum + c.memory_percent, 0) / inst.containers.length;
                 const memClass = avgMemPercent > 80 ? 'danger' : avgMemPercent > 60 ? 'warning' : 'success';
-                
+
                 const containersHtml = inst.containers.map(c => {
                     const containerCpuClass = c.cpu_percent > 80 ? 'danger' : c.cpu_percent > 50 ? 'warning' : 'success';
                     const containerMemClass = c.memory_percent > 80 ? 'danger' : c.memory_percent > 60 ? 'warning' : 'success';
-                    
+
                     return `
                         <div style="margin-left: 1.5rem; padding: 0.5rem; border-left: 2px solid var(--border-color); margin-top: 0.5rem;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -3515,7 +4793,7 @@
                         </div>
                     `;
                 }).join('');
-                
+
                 return `
                     <div class="card" style="margin-bottom: 1rem;">
                         <div class="card-body" style="padding: 1rem;">
@@ -3556,16 +4834,16 @@
                     </div>
                 `;
             }).join('');
-            
+
             container.innerHTML = html;
         }
-        
+
         async function refreshMonitoring() {
             showToast('Refreshing metrics...', 'info');
             await loadMonitoringData();
             showToast('Metrics refreshed', 'success');
         }
-        
+
         // =============================================================================
         // Challenge Manager Functions
         // =============================================================================
@@ -3995,10 +5273,11 @@
         const SETTINGS_SECTIONS = {
             'settings-instance': ['INSTANCE_TIMEOUT', 'MAX_INSTANCES_PER_USER', 'MAX_INSTANCES_PER_TEAM'],
             'settings-resources': ['CONTAINER_MAX_MEMORY', 'CONTAINER_MAX_CPU', 'CONTAINER_PIDS_LIMIT'],
-            'settings-network': ['PORT_RANGE_START', 'PORT_RANGE_END', 'NETWORK_ISOLATION_ENABLED', 'NETWORK_ICC_DISABLED', 'PUBLIC_HOST'],
-            'settings-auth': ['AUTH_MODE', 'CTFD_URL', 'CTFD_API_KEY'],
+            'settings-network': ['PORT_RANGE_START', 'PORT_RANGE_END', 'NETWORK_ISOLATION_ENABLED', 'NETWORK_ICC_DISABLED', 'NETWORK_SUBNET_BASE', 'NETWORK_SUBNET_PREFIX', 'PUBLIC_HOST'],
+            'settings-auth': ['AUTH_MODE', 'CTFD_URL', 'CTFD_API_KEY', 'METRICS_SECRET'],
             'settings-features': ['DYNAMIC_FLAGS_ENABLED', 'FLAG_PREFIX'],
-            'settings-forensics': ['FORENSICS_AUTO_CAPTURE', 'FORENSICS_RETENTION_HOURS']
+            'settings-forensics': ['FORENSICS_AUTO_CAPTURE', 'FORENSICS_RETENTION_HOURS'],
+            'settings-pcap': ['PCAP_MAX_SIZE_MB', 'PCAP_RETENTION_HOURS', 'PCAP_SNAP_LEN', 'PCAP_BPF_FILTER']
         };
 
         async function loadSettings() {
@@ -4038,10 +5317,10 @@
                         `;
                     } else if (s.type === 'select') {
                         // Dropdown for select type
-                        const optionsHtml = (s.options || []).map(opt => 
+                        const optionsHtml = (s.options || []).map(opt =>
                             `<option value="${opt}" ${String(s.value) === String(opt) ? 'selected' : ''}>${opt}</option>`
                         ).join('');
-                        
+
                         inputHtml = `
                             <div class="setting-input">
                                 <select id="setting-${key}" class="setting-select">
@@ -4089,7 +5368,7 @@
 
             // Add toggle label update listeners
             document.querySelectorAll('.setting-item .toggle-switch input').forEach(input => {
-                input.addEventListener('change', function() {
+                input.addEventListener('change', function () {
                     const label = this.closest('.setting-input').querySelector('span');
                     if (label) label.textContent = this.checked ? 'Enabled' : 'Disabled';
                 });
@@ -4130,7 +5409,7 @@
 
             try {
                 const data = await adminApi('/admin/api/settings', 'PUT', { settings: updates });
-                
+
                 if (data.success) {
                     showToast(`Saved ${Object.keys(data.applied).length} settings`, 'success');
                 } else {

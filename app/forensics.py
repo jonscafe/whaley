@@ -11,7 +11,6 @@ import asyncio
 import gzip
 import json
 import os
-import subprocess
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +19,7 @@ from typing import Dict, List, Optional, Tuple
 import shutil
 
 from .config import settings
+from .docker_client import get_docker_client
 
 
 def utcnow() -> datetime:
@@ -227,21 +227,23 @@ class ForensicsManager:
                 ext = ".log.gz" if settings.FORENSICS_COMPRESSION else ".log"
                 log_file = self.log_dir / f"{log_id}{ext}"
                 
-                # Get container IDs for this project
-                result = await asyncio.create_subprocess_exec(
-                    "docker", "compose", "-p", project_name, "ps", "-q",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                stdout, _ = await asyncio.wait_for(result.communicate(), timeout=10)
-                
-                container_ids = [c.strip() for c in stdout.decode().strip().split("\n") if c.strip()]
+                docker_client = get_docker_client()
+                containers = await docker_client.list_containers_by_project(project_name)
+                container_entries = [
+                    container for container in containers
+                    if (container.get("labels") or {}).get("whaley.pcap_sidecar") != "true"
+                ]
+                container_ids = [container["id"] for container in container_entries]
                 
                 if not container_ids:
                     return False, "No containers found for instance"
                 
                 # Track container names
                 captured_container_names: List[str] = []
+                names_by_id = {
+                    container["id"]: container.get("name", "").lstrip("/") or container["id"][:12]
+                    for container in container_entries
+                }
                 
                 # Prepare log content
                 log_lines = []
@@ -266,14 +268,7 @@ class ForensicsManager:
                 max_size = settings.FORENSICS_MAX_SIZE_MB * 1024 * 1024
                 
                 for container_id in container_ids:
-                    # Get container name
-                    name_result = await asyncio.create_subprocess_exec(
-                        "docker", "inspect", "--format", "{{.Name}}", container_id,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-                    name_stdout, _ = await asyncio.wait_for(name_result.communicate(), timeout=5)
-                    container_name = name_stdout.decode().strip().lstrip("/")
+                    container_name = names_by_id.get(container_id, container_id[:12])
                     captured_container_names.append(container_name)
                     
                     log_lines.append(f"\n{'─' * 50}")

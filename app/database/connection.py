@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     async_sessionmaker
 )
+from sqlalchemy import text
 
 from .models import Base
 
@@ -68,6 +69,57 @@ async def init_database(database_url: Optional[str] = None) -> None:
     # Create all tables
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.execute(text(
+                "DELETE FROM flag_mappings "
+                "WHERE flag_id IN ("
+                "  SELECT flag_id FROM ("
+                "    SELECT flag_id, ROW_NUMBER() OVER ("
+                "      PARTITION BY owner_id, local_challenge_id "
+                "      ORDER BY created_at ASC, flag_id ASC"
+                "    ) AS rn "
+                "    FROM flag_mappings "
+                "    WHERE owner_id IS NOT NULL"
+                "  ) ranked "
+                "  WHERE rn > 1"
+                ")"
+            ))
+            await conn.execute(text(
+                "DELETE FROM flag_mappings "
+                "WHERE flag_id IN ("
+                "  SELECT flag_id FROM ("
+                "    SELECT flag_id, ROW_NUMBER() OVER ("
+                "      PARTITION BY flag_content "
+                "      ORDER BY created_at ASC, flag_id ASC"
+                "    ) AS rn "
+                "    FROM flag_mappings "
+                "    WHERE flag_content IS NOT NULL"
+                "  ) ranked "
+                "  WHERE rn > 1"
+                ")"
+            ))
+        except Exception as exc:
+            print(f"[Database] Warning: failed to deduplicate flag mappings: {exc}")
+        try:
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_flag_owner_challenge "
+                "ON flag_mappings (owner_id, local_challenge_id) "
+                "WHERE owner_id IS NOT NULL"
+            ))
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_flag_content "
+                "ON flag_mappings (flag_content)"
+            ))
+        except Exception as exc:
+            print(f"[Database] Warning: failed to ensure flag dedup indexes: {exc}")
+        try:
+            await conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_suspicious_unique_key "
+                "ON suspicious_submissions (unique_key) "
+                "WHERE unique_key IS NOT NULL"
+            ))
+        except Exception as exc:
+            print(f"[Database] Warning: failed to ensure suspicious dedup index: {exc}")
     
     print(f"[Database] Initialized: {database_url.split('://')[0]}")
 

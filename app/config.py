@@ -65,8 +65,8 @@ class Settings(BaseSettings):
     DOCKER_NETWORK: str = "ctf-instances"
     
     # Container resource limits (enforced on all instances)
-    CONTAINER_MAX_MEMORY: str = "512m"  # Max memory per container (e.g., "256m", "1g")
-    CONTAINER_MAX_CPU: float = 1.0  # Max CPU cores per container (e.g., 0.5, 1.0)
+    CONTAINER_MAX_MEMORY: str = "384m"  # Max memory per container (e.g., "256m", "1g")
+    CONTAINER_MAX_CPU: float = 0.5  # Max CPU cores per container (e.g., 0.5, 1.0)
     CONTAINER_PIDS_LIMIT: int = 256  # Max PIDs per container (fork bomb protection)
     
     # Authentication settings
@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     
     # Admin dashboard settings
     ADMIN_KEY: Optional[str] = None  # Secret key for admin dashboard access
+    METRICS_SECRET: Optional[str] = None  # Bearer secret for Prometheus /metrics
     
     # Rate limiting for admin endpoints (requests per minute)
     ADMIN_RATE_LIMIT: int = 150  # Max requests per minute per IP
@@ -96,6 +97,17 @@ class Settings(BaseSettings):
     FORENSICS_COMPRESSION: bool = True  # Compress logs with gzip
     # Storage path
     FORENSICS_LOG_DIR: str = "/app/logs/forensics"
+
+    # Packet Capture settings (native tcpdump sidecar)
+    PCAP_ENABLED: bool = True
+    PCAP_MODE: str = ""  # all, selected, none (empty defers to legacy PCAP_ENABLED)
+    PCAP_SELECTED_CHALLENGES: str = ""
+    PCAP_DIR: str = "/app/logs/pcaps"
+    PCAP_MAX_SIZE_MB: int = 25
+    PCAP_RETENTION_HOURS: int = 24
+    PCAP_SNAP_LEN: int = 1024
+    PCAP_ROTATE_SECONDS: int = 300
+    PCAP_BPF_FILTER: str = "not (host 127.0.0.11 and port 53)"
     
     # Trusted proxies for X-Forwarded-For header
     # Only trust these IPs to set forwarded headers (prevents IP spoofing)
@@ -116,6 +128,8 @@ class Settings(BaseSettings):
     NETWORK_ISOLATION_ENABLED: bool = True  # Create isolated network per instance
     NETWORK_ICC_DISABLED: bool = True  # Disable inter-container communication
     NETWORK_PREFIX: str = "whaley"  # Prefix for instance networks
+    NETWORK_SUBNET_BASE: str = "10.240.0.0/16"  # Whaley-managed subnet pool for per-instance bridges
+    NETWORK_SUBNET_PREFIX: int = 28  # Prefix length allocated from NETWORK_SUBNET_BASE per instance
     
     # Public URL for instance access (auto-detect if "auto" or empty)
     PUBLIC_HOST: str = "auto"

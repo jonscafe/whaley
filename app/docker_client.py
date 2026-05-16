@@ -1,6 +1,7 @@
 """Docker SDK client wrapper for container and network management."""
 import os
 import asyncio
+import ipaddress
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
@@ -11,10 +12,13 @@ try:
     from docker.errors import DockerException, NotFound, APIError, ImageNotFound
     from docker.models.containers import Container
     from docker.models.networks import Network
+    from docker.types import IPAMConfig, IPAMPool
     DOCKER_AVAILABLE = True
 except ImportError:
     DOCKER_AVAILABLE = False
     docker = None
+
+from .config import settings
 
 
 class DockerError(Exception):
@@ -85,6 +89,49 @@ class DockerClient:
         if self._low_level_client is None:
             self.connect()
         return self._low_level_client
+
+    @staticmethod
+    def _configured_subnet_pool() -> tuple[ipaddress.IPv4Network, int]:
+        """Return the configured subnet pool and per-network prefix length."""
+        pool = ipaddress.ip_network(settings.NETWORK_SUBNET_BASE, strict=False)
+        prefix = int(settings.NETWORK_SUBNET_PREFIX)
+        if prefix <= pool.prefixlen or prefix > 30:
+            raise DockerError(
+                "Invalid network subnet configuration: "
+                f"{settings.NETWORK_SUBNET_BASE} cannot be subdivided into /{prefix} networks"
+            )
+        return pool, prefix
+
+    def _used_pool_subnets(self, pool: ipaddress.IPv4Network) -> set[ipaddress.IPv4Network]:
+        """Collect subnets already allocated from the configured Whaley pool."""
+        used: set[ipaddress.IPv4Network] = set()
+        for network in self.client.networks.list():
+            configs = (((network.attrs or {}).get("IPAM") or {}).get("Config") or [])
+            for config in configs:
+                subnet = config.get("Subnet")
+                if not subnet:
+                    continue
+                try:
+                    subnet_net = ipaddress.ip_network(subnet, strict=False)
+                except ValueError:
+                    continue
+                if subnet_net.subnet_of(pool) or subnet_net == pool:
+                    used.add(subnet_net)
+        return used
+
+    def _choose_available_subnet(self) -> ipaddress.IPv4Network:
+        """Choose the next available subnet from Whaley's managed address pool."""
+        pool, prefix = self._configured_subnet_pool()
+        used = self._used_pool_subnets(pool)
+
+        for candidate in pool.subnets(new_prefix=prefix):
+            if not any(candidate.overlaps(existing) for existing in used):
+                return candidate
+
+        raise DockerError(
+            "No free Docker network subnets remain in "
+            f"{settings.NETWORK_SUBNET_BASE} (/{settings.NETWORK_SUBNET_PREFIX})"
+        )
     
     # ==================== Network Operations ====================
     
@@ -115,21 +162,36 @@ class DockerClient:
                     return existing.id
                 except NotFound:
                     pass
-                
-                # Create new isolated network
-                network = self.client.networks.create(
-                    name=network_name,
-                    driver="bridge",
-                    internal=internal,
-                    options={
-                        "com.docker.network.bridge.enable_icc": str(enable_icc).lower(),
-                    },
-                    labels={
-                        "whaley.managed": "true",
-                        "whaley.created_at": datetime.utcnow().isoformat(),
-                    }
-                )
-                return network.id
+
+                last_error: Optional[Exception] = None
+                for _ in range(5):
+                    subnet = self._choose_available_subnet()
+                    try:
+                        network = self.client.networks.create(
+                            name=network_name,
+                            driver="bridge",
+                            internal=internal,
+                            options={
+                                "com.docker.network.bridge.enable_icc": str(enable_icc).lower(),
+                            },
+                            ipam=IPAMConfig(pool_configs=[IPAMPool(subnet=str(subnet))]),
+                            labels={
+                                "whaley.managed": "true",
+                                "whaley.created_at": datetime.utcnow().isoformat(),
+                                "whaley.subnet": str(subnet),
+                            }
+                        )
+                        return network.id
+                    except APIError as e:
+                        message = str(e).lower()
+                        last_error = e
+                        if "overlap" in message or "pool" in message or "subnet" in message:
+                            continue
+                        raise DockerError(f"Failed to create network {network_name}: {e}")
+
+                if last_error is not None:
+                    raise DockerError(f"Failed to create network {network_name}: {last_error}")
+                raise DockerError(f"Failed to create network {network_name}: no subnet available")
             except APIError as e:
                 raise DockerError(f"Failed to create network {network_name}: {e}")
         
@@ -448,6 +510,119 @@ class DockerClient:
             ]
         
         return await loop.run_in_executor(None, _list)
+
+    async def list_compose_projects(self) -> List[Dict[str, Any]]:
+        """List docker-compose projects discovered from container labels."""
+        loop = asyncio.get_event_loop()
+
+        def _list() -> List[Dict[str, Any]]:
+            projects: Dict[str, Dict[str, Any]] = {}
+            containers = self.client.containers.list(
+                all=True,
+                filters={"label": "com.docker.compose.project"},
+            )
+
+            for container in containers:
+                labels = container.labels or {}
+                project_name = labels.get("com.docker.compose.project")
+                if not project_name:
+                    continue
+
+                project = projects.setdefault(
+                    project_name,
+                    {
+                        "project_name": project_name,
+                        "container_ids": [],
+                        "container_names": [],
+                        "labels": [],
+                    },
+                )
+                project["container_ids"].append(container.id)
+                project["container_names"].append(container.name)
+                project["labels"].append(labels)
+
+            return list(projects.values())
+
+        return await loop.run_in_executor(None, _list)
+
+    async def remove_compose_project(
+        self,
+        project_name: str,
+        remove_volumes: bool = True
+    ) -> Dict[str, int]:
+        """Force-remove all resources belonging to a docker-compose project."""
+        loop = asyncio.get_event_loop()
+
+        def _remove() -> Dict[str, int]:
+            cleaned = {
+                "containers": 0,
+                "networks": 0,
+                "volumes": 0,
+                "images": 0,
+            }
+
+            containers = self.client.containers.list(
+                all=True,
+                filters={"label": f"com.docker.compose.project={project_name}"},
+            )
+            for container in containers:
+                try:
+                    container.remove(force=True, v=remove_volumes)
+                    cleaned["containers"] += 1
+                except NotFound:
+                    continue
+                except APIError as exc:
+                    print(f"[Docker] Warning: failed to remove container {container.name}: {exc}")
+
+            networks = self.client.networks.list(
+                filters={"label": f"com.docker.compose.project={project_name}"}
+            )
+            for network in networks:
+                try:
+                    network.remove()
+                    cleaned["networks"] += 1
+                except APIError:
+                    try:
+                        for attached in network.containers:
+                            network.disconnect(attached, force=True)
+                        network.remove()
+                        cleaned["networks"] += 1
+                    except Exception as exc:
+                        print(f"[Docker] Warning: failed to remove network {network.name}: {exc}")
+
+            if remove_volumes:
+                try:
+                    volumes = self.client.volumes.list(
+                        filters={"label": f"com.docker.compose.project={project_name}"}
+                    )
+                except Exception:
+                    volumes = []
+
+                for volume in volumes:
+                    try:
+                        volume.remove(force=True)
+                        cleaned["volumes"] += 1
+                    except APIError as exc:
+                        print(f"[Docker] Warning: failed to remove volume {volume.name}: {exc}")
+
+            try:
+                for image in self.client.images.list():
+                    for tag in (image.tags or []):
+                        if tag.startswith(f"{project_name}-"):
+                            try:
+                                self.client.images.remove(tag, force=True)
+                                cleaned["images"] += 1
+                            except (NotFound, ImageNotFound):
+                                pass
+                            except APIError as exc:
+                                print(f"[Docker] Warning: failed to remove image {tag}: {exc}")
+                            break
+            except Exception as exc:
+                print(f"[Docker] Warning: per-spawn image scan failed for {project_name}: {exc}")
+
+            return cleaned
+
+        return await loop.run_in_executor(None, _remove)
     
     # ==================== Compose-like Operations ====================
     
@@ -591,36 +766,106 @@ class DockerClient:
     
     async def cleanup_whaley_resources(
         self,
-        older_than_hours: int = 24
+        active_project_names: Optional[set] = None,
+        older_than_seconds: int = 300,
+        older_than_hours: Optional[int] = None,
     ) -> Dict[str, int]:
         """
-        Cleanup orphaned Whaley resources (networks, containers).
+        Cleanup orphaned Whaley resources (networks and per-spawn images).
         
         Returns:
             Count of cleaned resources
         """
         from datetime import timedelta
+        import re
         
         loop = asyncio.get_event_loop()
-        cleaned = {"networks": 0, "containers": 0}
+        cleaned = {"networks": 0, "images": 0}
+        active = set(active_project_names or ())
+        if older_than_hours is not None:
+            older_than_seconds = int(older_than_hours * 3600)
+
+        def _project_from_network(name: str) -> Optional[str]:
+            if name.startswith("whaley-"):
+                return name[len("whaley-"):]
+            if name.endswith("_default") and "_" in name:
+                project = name.rsplit("_", 1)[0]
+                if re.search(r"-[a-f0-9]{8}$", project):
+                    return project
+            return None
         
         def _cleanup():
-            cutoff = datetime.utcnow() - timedelta(hours=older_than_hours)
+            cutoff = datetime.utcnow() - timedelta(seconds=older_than_seconds)
+            reserved = {
+                "bridge",
+                "host",
+                "none",
+                "ctf-instances",
+                "whaley-redis",
+                "whaley_default",
+            }
             
-            # Cleanup orphaned networks
-            networks = self.client.networks.list(
-                filters={"label": "whaley.managed=true"}
-            )
-            for network in networks:
-                created_at_str = network.attrs.get("Labels", {}).get("whaley.created_at")
+            for network in self.client.networks.list():
+                name = network.name
+                if name in reserved:
+                    continue
+
+                labels = network.attrs.get("Labels", {}) or {}
+                project = labels.get("com.docker.compose.project") or _project_from_network(name)
+                is_whaley_network = labels.get("whaley.managed") == "true" or bool(project)
+                if not is_whaley_network:
+                    continue
+                if project and project in active:
+                    continue
+                if len(network.containers) > 0:
+                    continue
+
+                created_at_str = labels.get("whaley.created_at") or network.attrs.get("Created")
                 if created_at_str:
                     try:
-                        created_at = datetime.fromisoformat(created_at_str)
-                        if created_at < cutoff and len(network.containers) == 0:
-                            network.remove()
-                            cleaned["networks"] += 1
+                        created_at = datetime.fromisoformat(
+                            created_at_str.replace("Z", "+00:00")
+                        ).replace(tzinfo=None)
+                        if created_at > cutoff:
+                            continue
                     except Exception:
                         pass
+
+                try:
+                    network.remove()
+                    cleaned["networks"] += 1
+                except APIError as exc:
+                    print(f"[Docker] orphan network {name} remove failed: {exc}")
+
+            for image in self.client.images.list():
+                for tag in (image.tags or []):
+                    repository = tag.split(":", 1)[0]
+                    if "/" in repository:
+                        continue
+                    match = re.match(r"^(.+-[a-f0-9]{8})-[a-z0-9_.-]+$", repository)
+                    if not match:
+                        continue
+                    project = match.group(1)
+                    if project in active:
+                        break
+                    try:
+                        created_str = image.attrs.get("Created", "")
+                        if created_str:
+                            created = datetime.fromisoformat(
+                                created_str.replace("Z", "+00:00")
+                            ).replace(tzinfo=None)
+                            if created > cutoff:
+                                break
+                    except Exception:
+                        pass
+                    try:
+                        self.client.images.remove(tag, force=True)
+                        cleaned["images"] += 1
+                    except (NotFound, ImageNotFound):
+                        pass
+                    except APIError as exc:
+                        print(f"[Docker] orphan image {tag} remove failed: {exc}")
+                    break
             
             return cleaned
         
