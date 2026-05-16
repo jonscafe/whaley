@@ -488,6 +488,14 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 ---
 
+## Acknowledgments
+
+Some infrastructure ideas and hardening lessons for Whaley were inspired by the MCTF 5.0 post-mortem and follow-up work from [MCTF Behind the Scenes: The Infra We Built and the Chaos We Caused](https://mctf-blog.microclub.info/posts/organizing-mctf-infrastructure), by [Younes Ferradji (Ynxfdj)](https://github.com/Younesfdj) and [Abderrahmane Yahiaoui (COn4n)](https://github.com/Abdo30004).
+
+The packet-capture workflow and PCAP sidecar direction were also inspired by [Tulip](https://github.com/OpenAttackDefenseTools/tulip).
+
+---
+
 ## 👨‍💻 Author
 
 <table>
