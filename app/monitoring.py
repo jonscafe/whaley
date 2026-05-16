@@ -241,10 +241,14 @@ class MonitoringManager:
             timestamp=utcnow().isoformat()
         )
     
-    async def get_system_metrics(self) -> SystemMetrics:
+    async def get_system_metrics(self, include_container_stats: bool = True) -> SystemMetrics:
         """
         Get overall system metrics using Docker SDK.
         Excludes Whaley infrastructure containers (instancer, redis).
+
+        Args:
+            include_container_stats: When false, skip per-container Docker stats.
+                This keeps high-volume dashboards responsive during large events.
         
         Returns:
             SystemMetrics with host and container stats
@@ -259,8 +263,10 @@ class MonitoringManager:
             total_containers = len(container_ids)
             running_containers = total_containers
             
-            # Get metrics for all containers
-            if container_ids:
+            # Get metrics for all containers only when explicitly requested. A
+            # full stats sweep is expensive at event scale because Docker stats
+            # has to sample every running challenge container.
+            if include_container_stats and container_ids:
                 container_metrics = await self.get_container_metrics(container_ids)
                 total_cpu = sum(m.cpu_percent for m in container_metrics.values())
                 total_memory = sum(m.memory_usage_mb for m in container_metrics.values())

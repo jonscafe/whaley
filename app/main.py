@@ -2384,16 +2384,20 @@ from .monitoring import get_monitoring_manager
 
 
 @app.get("/admin/api/monitoring/system")
-async def admin_monitoring_system(_: bool = Depends(verify_admin_key)):
+async def admin_monitoring_system(
+    include_container_stats: bool = False,
+    _: bool = Depends(verify_admin_key)
+):
     """Get overall system resource metrics."""
     monitoring = get_monitoring_manager()
-    metrics = await monitoring.get_system_metrics()
+    metrics = await monitoring.get_system_metrics(include_container_stats=include_container_stats)
     
     return {
         "total_containers": metrics.total_containers,
         "running_containers": metrics.running_containers,
         "total_cpu_percent": metrics.total_cpu_percent,
         "total_memory_mb": metrics.total_memory_mb,
+        "container_stats_sampled": include_container_stats,
         "host_cpu_cores": metrics.host_cpu_cores,
         "host_memory_total_mb": metrics.host_memory_total_mb,
         "host_memory_used_mb": metrics.host_memory_used_mb,
@@ -2403,19 +2407,31 @@ async def admin_monitoring_system(_: bool = Depends(verify_admin_key)):
 
 
 @app.get("/admin/api/monitoring/instances")
-async def admin_monitoring_instances(_: bool = Depends(verify_admin_key)):
-    """Get resource metrics for all active instances."""
+async def admin_monitoring_instances(
+    limit: int = 20,
+    offset: int = 0,
+    _: bool = Depends(verify_admin_key)
+):
+    """Get paginated resource metrics for active instances."""
     monitoring = get_monitoring_manager()
+
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
     
-    # Get all active instances
-    instances = list(docker_manager.instances.values())
+    # Get all running instances, then sample only the requested page. Docker
+    # stats is intentionally page-scoped because each metric read can block on
+    # the Docker daemon under large stress tests.
+    running_instances = [
+        instance
+        for instance in docker_manager.instances.values()
+        if instance.status == "running"
+    ]
+    total_running = len(running_instances)
+    page_instances = running_instances[offset:offset + limit]
     
     instance_metrics = []
     
-    for instance in instances:
-        if instance.status != "running":
-            continue
-        
+    async def collect_instance_metrics(instance):
         # Get challenge name from challenge config
         challenge = docker_manager.challenges.get(instance.challenge_id)
         challenge_name = challenge.name if challenge else instance.challenge_id
@@ -2431,10 +2447,10 @@ async def admin_monitoring_instances(_: bool = Depends(verify_admin_key)):
                 container_ids = [container["id"] for container in containers]
             except Exception as e:
                 print(f"[Monitoring] Failed to get containers for {instance.instance_id}: {e}")
-                continue
+                return None
         
         if not container_ids:
-            continue
+            return None
         
         # Get metrics for this instance
         try:
@@ -2448,7 +2464,7 @@ async def admin_monitoring_instances(_: bool = Depends(verify_admin_key)):
             )
             
             if metrics:
-                instance_metrics.append({
+                return {
                     "instance_id": metrics.instance_id,
                     "challenge_id": metrics.challenge_id,
                     "challenge_name": metrics.challenge_name,
@@ -2470,14 +2486,33 @@ async def admin_monitoring_instances(_: bool = Depends(verify_admin_key)):
                         for c in metrics.containers
                     ],
                     "timestamp": metrics.timestamp
-                })
+                }
         except Exception as e:
             print(f"[Monitoring] Failed to get metrics for instance {instance.instance_id}: {e}")
-            continue
+        return None
+
+    # Keep Docker stats calls bounded even inside a page.
+    semaphore = asyncio.Semaphore(4)
+
+    async def collect_with_limit(instance):
+        async with semaphore:
+            return await collect_instance_metrics(instance)
+
+    results = await asyncio.gather(
+        *(collect_with_limit(instance) for instance in page_instances),
+        return_exceptions=True,
+    )
+    for result in results:
+        if isinstance(result, dict):
+            instance_metrics.append(result)
     
     return {
         "instances": instance_metrics,
-        "total_instances": len(instance_metrics)
+        "total_instances": total_running,
+        "returned_instances": len(instance_metrics),
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + limit < total_running
     }
 
 

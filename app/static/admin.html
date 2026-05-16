@@ -2118,6 +2118,7 @@
                                 Loading instance metrics...
                             </p>
                         </div>
+                        <div id="pagination-monitoring-instances" class="pagination-container"></div>
                     </div>
                 </section>
             </div>
@@ -2224,9 +2225,13 @@
         const DASHBOARD_INSTANCES_PAGE_SIZE = 20;
         const USER_PORTS_PAGE_SIZE = 50;
         const PCAP_INSTANCES_PAGE_SIZE = 25;
+        const MONITORING_INSTANCES_PAGE_SIZE = 20;
         let dashboardInstancesPage = 1;
         let userPortsPage = 1;
         let pcapInstancesPage = 1;
+        let monitoringInstancesPage = 1;
+        let monitoringInstancesTotal = 0;
+        let monitoringLoadInFlight = false;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -4487,6 +4492,10 @@ ${rows}
                     pcapInstancesPage += delta;
                     renderPcapInstances();
                     break;
+                case 'monitoring-instances':
+                    monitoringInstancesPage = Math.max(1, monitoringInstancesPage + delta);
+                    loadMonitoringData();
+                    break;
             }
         }
 
@@ -4767,19 +4776,29 @@ ${rows}
         let allMonitoringInstances = [];
 
         async function loadMonitoringData() {
+            if (monitoringLoadInFlight) return;
+            monitoringLoadInFlight = true;
             try {
-                // Load system metrics and instance metrics in parallel
+                const offset = (monitoringInstancesPage - 1) * MONITORING_INSTANCES_PAGE_SIZE;
+
+                // Load a lightweight system snapshot and one page of instance
+                // metrics. Full Docker stats sweeps are too expensive during
+                // stress tests with hundreds of containers.
                 const [systemData, instancesData] = await Promise.all([
                     adminApi('/admin/api/monitoring/system'),
-                    adminApi('/admin/api/monitoring/instances')
+                    adminApi(`/admin/api/monitoring/instances?limit=${MONITORING_INSTANCES_PAGE_SIZE}&offset=${offset}`)
                 ]);
 
                 // Update system stats
                 document.getElementById('stat-total-containers').textContent = systemData.total_containers;
                 document.getElementById('stat-running-containers').textContent = systemData.running_containers;
-                document.getElementById('stat-total-cpu').textContent = systemData.total_cpu_percent.toFixed(2) + '%';
+                document.getElementById('stat-total-cpu').textContent = systemData.container_stats_sampled
+                    ? systemData.total_cpu_percent.toFixed(2) + '%'
+                    : 'Paged';
                 document.getElementById('stat-cpu-cores').textContent = systemData.host_cpu_cores + ' cores available';
-                document.getElementById('stat-total-memory').textContent = systemData.total_memory_mb.toFixed(0) + ' MB';
+                document.getElementById('stat-total-memory').textContent = systemData.container_stats_sampled
+                    ? systemData.total_memory_mb.toFixed(0) + ' MB'
+                    : 'Paged';
 
                 const memPercent = systemData.host_memory_total_mb > 0
                     ? ((systemData.host_memory_used_mb / systemData.host_memory_total_mb) * 100).toFixed(1)
@@ -4789,11 +4808,16 @@ ${rows}
 
                 // Store and render instances
                 allMonitoringInstances = instancesData.instances || [];
+                monitoringInstancesTotal = instancesData.total_instances || allMonitoringInstances.length;
+                const totalPages = Math.max(1, Math.ceil(monitoringInstancesTotal / MONITORING_INSTANCES_PAGE_SIZE));
+                monitoringInstancesPage = Math.max(1, Math.min(monitoringInstancesPage, totalPages));
                 renderMonitoringInstances();
 
             } catch (error) {
                 console.error('Failed to load monitoring data:', error);
                 showToast('Failed to load monitoring data', 'error');
+            } finally {
+                monitoringLoadInFlight = false;
             }
         }
 
@@ -4805,19 +4829,21 @@ ${rows}
             const container = document.getElementById('monitoring-instances-container');
             const showHighUsageOnly = document.getElementById('filter-high-usage').checked;
 
-            let instances = allMonitoringInstances;
+            let instances = [...allMonitoringInstances];
 
-            // Filter high usage if checkbox is checked
+            // Filter high usage on the current metrics page.
             if (showHighUsageOnly) {
                 instances = instances.filter(inst => {
                     const highCpu = inst.total_cpu_percent > 50;
-                    const highMemory = inst.containers.some(c => c.memory_percent > 80);
+                    const highMemory = (inst.containers || []).some(c => c.memory_percent > 80);
                     return highCpu || highMemory;
                 });
             }
 
             if (instances.length === 0) {
                 container.innerHTML = '<p style="text-align: center; padding: 2rem; color: var(--text-muted);">No instances found</p>';
+                const totalPages = Math.max(1, Math.ceil(monitoringInstancesTotal / MONITORING_INSTANCES_PAGE_SIZE));
+                updatePagination('monitoring-instances', monitoringInstancesPage, totalPages, monitoringInstancesTotal);
                 return;
             }
 
@@ -4826,10 +4852,11 @@ ${rows}
 
             const html = instances.map(inst => {
                 const cpuClass = inst.total_cpu_percent > 80 ? 'danger' : inst.total_cpu_percent > 50 ? 'warning' : 'success';
-                const avgMemPercent = inst.containers.reduce((sum, c) => sum + c.memory_percent, 0) / inst.containers.length;
+                const instanceContainers = inst.containers || [];
+                const avgMemPercent = instanceContainers.reduce((sum, c) => sum + c.memory_percent, 0) / Math.max(1, instanceContainers.length);
                 const memClass = avgMemPercent > 80 ? 'danger' : avgMemPercent > 60 ? 'warning' : 'success';
 
-                const containersHtml = inst.containers.map(c => {
+                const containersHtml = instanceContainers.map(c => {
                     const containerCpuClass = c.cpu_percent > 80 ? 'danger' : c.cpu_percent > 50 ? 'warning' : 'success';
                     const containerMemClass = c.memory_percent > 80 ? 'danger' : c.memory_percent > 60 ? 'warning' : 'success';
 
@@ -4892,6 +4919,8 @@ ${rows}
             }).join('');
 
             container.innerHTML = html;
+            const totalPages = Math.max(1, Math.ceil(monitoringInstancesTotal / MONITORING_INSTANCES_PAGE_SIZE));
+            updatePagination('monitoring-instances', monitoringInstancesPage, totalPages, monitoringInstancesTotal);
         }
 
         async function refreshMonitoring() {

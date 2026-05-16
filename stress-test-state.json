@@ -1,12 +1,12 @@
 {
-  "created_at": "2026-05-16T12:32:12.532884+00:00",
+  "created_at": "2026-05-16T12:55:19.575295+00:00",
   "base_url": "http://34.126.116.188:8000",
   "mode": "completed",
   "args": {
     "base_url": "http://34.126.116.188:8000",
     "admin_key": "<redacted>",
     "team_count": 10,
-    "team_prefix": "tesdua",
+    "team_prefix": "triage1",
     "instances_per_team": 2,
     "spawn_concurrency": 8,
     "admin_qps": 2.0,
@@ -23,7 +23,7 @@
     "cleanup_from_state": "",
     "state_file": "stress-test-state.json"
   },
-  "effective_team_prefix": "tesdua",
+  "effective_team_prefix": "triage1",
   "challenges": [
     {
       "id": "example-web",
@@ -52,243 +52,243 @@
   ],
   "instances": [
     {
-      "instance_id": "example-web-tesdua-team-001-e2015179",
+      "instance_id": "example-web-triage1-team-001-149daeda",
       "challenge_id": "example-web",
       "challenge_name": "Example Web Challenge",
       "category": "web",
-      "team_id": "tesdua-team-001",
+      "team_id": "triage1-team-001",
       "team_name": "Stress Team 001",
-      "user_id": "tesdua-team-001-user-1",
-      "username": "tesdua-team-001-user-1",
+      "user_id": "triage1-team-001-user-1",
+      "username": "triage1-team-001-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:47371",
+      "public_url": "34.126.116.188:52431",
       "public_urls": {
-        "80": "34.126.116.188:47371"
+        "80": "34.126.116.188:52431"
       }
     },
     {
-      "instance_id": "enterprise-tesdua-team-002-f83abce9",
+      "instance_id": "enterprise-triage1-team-002-cbd9624a",
       "challenge_id": "enterprise",
       "challenge_name": "Enterprise",
       "category": "web",
-      "team_id": "tesdua-team-002",
+      "team_id": "triage1-team-002",
       "team_name": "Stress Team 002",
-      "user_id": "tesdua-team-002-user-1",
-      "username": "tesdua-team-002-user-1",
+      "user_id": "triage1-team-002-user-1",
+      "username": "triage1-team-002-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:51163",
+      "public_url": "34.126.116.188:17220",
       "public_urls": {
-        "10077": "34.126.116.188:51163"
+        "10077": "34.126.116.188:17220"
       }
     },
     {
-      "instance_id": "example-pwn-tesdua-team-003-509cfe2c",
+      "instance_id": "example-pwn-triage1-team-003-5adc0f6c",
       "challenge_id": "example-pwn",
       "challenge_name": "Example PWN Challenge",
       "category": "pwn",
-      "team_id": "tesdua-team-003",
+      "team_id": "triage1-team-003",
       "team_name": "Stress Team 003",
-      "user_id": "tesdua-team-003-user-1",
-      "username": "tesdua-team-003-user-1",
+      "user_id": "triage1-team-003-user-1",
+      "username": "triage1-team-003-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:54280",
+      "public_url": "34.126.116.188:11353",
       "public_urls": {
-        "9999": "34.126.116.188:54280"
+        "9999": "34.126.116.188:11353"
       }
     },
     {
-      "instance_id": "example-web-tesdua-team-004-61c472cb",
+      "instance_id": "example-web-triage1-team-004-3fa97b41",
       "challenge_id": "example-web",
       "challenge_name": "Example Web Challenge",
       "category": "web",
-      "team_id": "tesdua-team-004",
+      "team_id": "triage1-team-004",
       "team_name": "Stress Team 004",
-      "user_id": "tesdua-team-004-user-1",
-      "username": "tesdua-team-004-user-1",
+      "user_id": "triage1-team-004-user-1",
+      "username": "triage1-team-004-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:49180",
+      "public_url": "34.126.116.188:48075",
       "public_urls": {
-        "80": "34.126.116.188:49180"
+        "80": "34.126.116.188:48075"
       }
     },
     {
-      "instance_id": "enterprise-tesdua-team-001-52f5a622",
+      "instance_id": "enterprise-triage1-team-001-a2bdae3c",
       "challenge_id": "enterprise",
       "challenge_name": "Enterprise",
       "category": "web",
-      "team_id": "tesdua-team-001",
+      "team_id": "triage1-team-001",
       "team_name": "Stress Team 001",
-      "user_id": "tesdua-team-001-user-2",
-      "username": "tesdua-team-001-user-2",
+      "user_id": "triage1-team-001-user-2",
+      "username": "triage1-team-001-user-2",
       "status": "running",
-      "public_url": "34.126.116.188:58185",
+      "public_url": "34.126.116.188:52218",
       "public_urls": {
-        "10077": "34.126.116.188:58185"
+        "10077": "34.126.116.188:52218"
       }
     },
     {
-      "instance_id": "enterprise-tesdua-team-005-52bbd5f6",
+      "instance_id": "enterprise-triage1-team-005-6511ad09",
       "challenge_id": "enterprise",
       "challenge_name": "Enterprise",
       "category": "web",
-      "team_id": "tesdua-team-005",
+      "team_id": "triage1-team-005",
       "team_name": "Stress Team 005",
-      "user_id": "tesdua-team-005-user-1",
-      "username": "tesdua-team-005-user-1",
+      "user_id": "triage1-team-005-user-1",
+      "username": "triage1-team-005-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:38778",
+      "public_url": "34.126.116.188:50882",
       "public_urls": {
-        "10077": "34.126.116.188:38778"
+        "10077": "34.126.116.188:50882"
       }
     },
     {
-      "instance_id": "example-pwn-tesdua-team-006-078fd44a",
+      "instance_id": "example-pwn-triage1-team-006-c9935cce",
       "challenge_id": "example-pwn",
       "challenge_name": "Example PWN Challenge",
       "category": "pwn",
-      "team_id": "tesdua-team-006",
+      "team_id": "triage1-team-006",
       "team_name": "Stress Team 006",
-      "user_id": "tesdua-team-006-user-1",
-      "username": "tesdua-team-006-user-1",
+      "user_id": "triage1-team-006-user-1",
+      "username": "triage1-team-006-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:19073",
+      "public_url": "34.126.116.188:39229",
       "public_urls": {
-        "9999": "34.126.116.188:19073"
+        "9999": "34.126.116.188:39229"
       }
     },
     {
-      "instance_id": "example-web-tesdua-team-007-118fcffb",
+      "instance_id": "example-web-triage1-team-007-a7ebaaa9",
       "challenge_id": "example-web",
       "challenge_name": "Example Web Challenge",
       "category": "web",
-      "team_id": "tesdua-team-007",
+      "team_id": "triage1-team-007",
       "team_name": "Stress Team 007",
-      "user_id": "tesdua-team-007-user-1",
-      "username": "tesdua-team-007-user-1",
+      "user_id": "triage1-team-007-user-1",
+      "username": "triage1-team-007-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:15006",
+      "public_url": "34.126.116.188:57869",
       "public_urls": {
-        "80": "34.126.116.188:15006"
+        "80": "34.126.116.188:57869"
       }
     },
     {
-      "instance_id": "enterprise-tesdua-team-008-21c3efe3",
+      "instance_id": "enterprise-triage1-team-008-28762b1f",
       "challenge_id": "enterprise",
       "challenge_name": "Enterprise",
       "category": "web",
-      "team_id": "tesdua-team-008",
+      "team_id": "triage1-team-008",
       "team_name": "Stress Team 008",
-      "user_id": "tesdua-team-008-user-1",
-      "username": "tesdua-team-008-user-1",
+      "user_id": "triage1-team-008-user-1",
+      "username": "triage1-team-008-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:38549",
+      "public_url": "34.126.116.188:50331",
       "public_urls": {
-        "10077": "34.126.116.188:38549"
+        "10077": "34.126.116.188:50331"
       }
     },
     {
-      "instance_id": "example-pwn-tesdua-team-009-2137cea5",
+      "instance_id": "example-pwn-triage1-team-009-f9f75581",
       "challenge_id": "example-pwn",
       "challenge_name": "Example PWN Challenge",
       "category": "pwn",
-      "team_id": "tesdua-team-009",
+      "team_id": "triage1-team-009",
       "team_name": "Stress Team 009",
-      "user_id": "tesdua-team-009-user-1",
-      "username": "tesdua-team-009-user-1",
+      "user_id": "triage1-team-009-user-1",
+      "username": "triage1-team-009-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:43077",
+      "public_url": "34.126.116.188:23009",
       "public_urls": {
-        "9999": "34.126.116.188:43077"
+        "9999": "34.126.116.188:23009"
       }
     },
     {
-      "instance_id": "example-web-tesdua-team-010-4ff657af",
+      "instance_id": "example-web-triage1-team-010-6e8576a7",
       "challenge_id": "example-web",
       "challenge_name": "Example Web Challenge",
       "category": "web",
-      "team_id": "tesdua-team-010",
+      "team_id": "triage1-team-010",
       "team_name": "Stress Team 010",
-      "user_id": "tesdua-team-010-user-1",
-      "username": "tesdua-team-010-user-1",
+      "user_id": "triage1-team-010-user-1",
+      "username": "triage1-team-010-user-1",
       "status": "running",
-      "public_url": "34.126.116.188:51072",
+      "public_url": "34.126.116.188:19090",
       "public_urls": {
-        "80": "34.126.116.188:51072"
+        "80": "34.126.116.188:19090"
       }
     }
   ],
   "spawn_failures": [
     {
-      "team_id": "tesdua-team-002",
+      "team_id": "triage1-team-002",
       "slot_number": 2,
       "challenge_id": "example-pwn",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-002"
     },
     {
-      "team_id": "tesdua-team-003",
+      "team_id": "triage1-team-003",
       "slot_number": 2,
       "challenge_id": "example-web",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-003"
     },
     {
-      "team_id": "tesdua-team-004",
+      "team_id": "triage1-team-004",
       "slot_number": 2,
       "challenge_id": "enterprise",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-004"
     },
     {
-      "team_id": "tesdua-team-005",
+      "team_id": "triage1-team-005",
       "slot_number": 2,
       "challenge_id": "example-pwn",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-005"
     },
     {
-      "team_id": "tesdua-team-006",
+      "team_id": "triage1-team-006",
       "slot_number": 2,
       "challenge_id": "example-web",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-006"
     },
     {
-      "team_id": "tesdua-team-007",
+      "team_id": "triage1-team-007",
       "slot_number": 2,
       "challenge_id": "enterprise",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-007"
     },
     {
-      "team_id": "tesdua-team-008",
+      "team_id": "triage1-team-008",
       "slot_number": 2,
       "challenge_id": "example-pwn",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-008"
     },
     {
-      "team_id": "tesdua-team-009",
+      "team_id": "triage1-team-009",
       "slot_number": 2,
       "challenge_id": "example-web",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-009"
     },
     {
-      "team_id": "tesdua-team-010",
+      "team_id": "triage1-team-010",
       "slot_number": 2,
       "challenge_id": "enterprise",
-      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal Server Error"
+      "error": "POST http://34.126.116.188:8000/admin/api/instances/spawn -> 500: Internal spawn error: Could not acquire lock: spawn:triage1-team-010"
     }
   ],
   "result": {
-    "completed_at": "2026-05-16T12:32:12.532769+00:00",
+    "completed_at": "2026-05-16T12:55:19.575240+00:00",
     "base_url": "http://34.126.116.188:8000",
-    "effective_team_prefix": "tesdua",
+    "effective_team_prefix": "triage1",
     "spawned_count": 11,
     "spawn_failed_count": 9,
-    "spawn_duration_seconds": 41.4,
+    "spawn_duration_seconds": 40.51,
     "traffic": {
-      "http_attempts": 594,
-      "http_successes": 350,
-      "http_failures": 244,
-      "tcp_attempts": 380,
-      "tcp_successes": 260,
-      "tcp_failures": 120,
-      "bytes_sent": 1560,
-      "bytes_received": 127319
+      "http_attempts": 592,
+      "http_successes": 229,
+      "http_failures": 363,
+      "tcp_attempts": 396,
+      "tcp_successes": 396,
+      "tcp_failures": 0,
+      "bytes_sent": 2376,
+      "bytes_received": 85125
     },
     "instance_snapshot": {
       "total": 11,
@@ -298,9 +298,9 @@
     },
     "pcap_snapshot": {
       "mode": "all",
-      "instance_count": 95,
-      "file_count": 347,
-      "total_size_mb": 9.78
+      "instance_count": 110,
+      "file_count": 362,
+      "total_size_mb": 10.34
     },
     "cleanup": {
       "deleted": 11,
