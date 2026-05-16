@@ -46,12 +46,12 @@ async function init() {
         showAuthForm();
     }
     
-    // Refresh instances every 10 seconds
+    // Refresh instances every 1 minute
     setInterval(() => {
         if (currentUser) {
             loadInstances();
         }
-    }, 10000);
+    }, 60000);
 }
 
 function showAuthForm() {
