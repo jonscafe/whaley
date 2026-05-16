@@ -2088,12 +2088,12 @@
                                 <div class="stat-value" id="stat-running-containers">-</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-label">Total CPU Usage</div>
+                                <div class="stat-label">Host Load (1m)</div>
                                 <div class="stat-value" id="stat-total-cpu">-</div>
-                                <div class="stat-meta" id="stat-cpu-cores">- cores available</div>
+                                <div class="stat-meta" id="stat-cpu-cores">-</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-label">Total Memory Usage</div>
+                                <div class="stat-label">Host Memory</div>
                                 <div class="stat-value" id="stat-total-memory">-</div>
                                 <div class="stat-meta" id="stat-host-memory">- / - MB</div>
                             </div>
@@ -2101,22 +2101,57 @@
                     </div>
                 </section>
 
-                <!-- Instance Resource Usage -->
                 <section class="card">
                     <div class="card-header">
-                        <h2>🔍 Instance Resource Usage</h2>
+                        <h2>🛡 Firewall Rate Limits</h2>
+                        <div class="header-actions">
+                            <button class="btn btn-secondary btn-sm" onclick="loadFirewallStatus()">Refresh Status</button>
+                            <button class="btn btn-secondary btn-sm" onclick="cleanupFirewallRules()">Cleanup Stale</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-label">Firewall</div>
+                                <div class="stat-value" id="stat-firewall-enabled">-</div>
+                                <div class="stat-meta" id="stat-firewall-backend">-</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Managed Rules</div>
+                                <div class="stat-value" id="stat-firewall-rules">-</div>
+                                <div class="stat-meta" id="stat-firewall-instances">-</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Stale Tracked</div>
+                                <div class="stat-value" id="stat-firewall-stale">-</div>
+                                <div class="stat-meta" id="stat-firewall-errors">-</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Policy</div>
+                                <div class="stat-value" id="stat-firewall-policy">-</div>
+                                <div class="stat-meta" id="stat-firewall-chain">-</div>
+                            </div>
+                        </div>
+                        <p id="firewall-status-note" style="margin-top: 12px; color: var(--text-muted);">Loading firewall status...</p>
+                    </div>
+                </section>
+
+                <!-- Instance Inventory -->
+                <section class="card">
+                    <div class="card-header">
+                        <h2>🔍 Instance Inventory</h2>
                         <div class="header-actions">
                             <button class="btn btn-secondary btn-sm" onclick="sampleMonitoringPage()">Sample Page Metrics</button>
                             <label>
                                 <input type="checkbox" id="filter-high-usage" onchange="filterMonitoringInstances()">
-                                Show high usage only (CPU >50% or RAM >80%)
+                                Show high sampled usage only
                             </label>
                         </div>
                     </div>
                     <div class="card-body">
                         <div id="monitoring-instances-container">
                             <p style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                                Loading instance metrics...
+                                Loading instance inventory...
                             </p>
                         </div>
                         <div id="pagination-monitoring-instances" class="pagination-container"></div>
@@ -2625,6 +2660,9 @@
                                 </div>
                             </div>
                             <div class="instance-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="showInstanceFirewall(${jsArg(instance.instance_id)})">
+                                    🛡 Firewall
+                                </button>
                                 <button class="btn btn-secondary btn-sm" onclick="showInstanceMetrics(${jsArg(instance.instance_id)})">
                                     📈 Metrics
                                 </button>
@@ -2765,6 +2803,89 @@ ${rows}
                 );
             } catch (error) {
                 showToast(error.message || 'Failed to load instance metrics', 'error');
+            }
+        }
+
+        async function showInstanceFirewall(instanceId) {
+            try {
+                const data = await adminApi(`/admin/api/firewall/instances/${encodeURIComponent(instanceId)}`);
+                const instance = data.instance || {};
+                const ports = data.ports || [];
+                const ownerName = instance.owner_name || instance.team_name || instance.username || instance.owner_id || '-';
+                const policyLabel = data.enabled ? 'Enabled' : 'Disabled';
+
+                const portsHtml = ports.length > 0 ? ports.map(portGroup => {
+                    const rules = portGroup.rules || [];
+                    const ruleRows = rules.map(rule => `
+                        <tr>
+                            <td><code>${escapeHtml(rule.rule_kind)}</code></td>
+                            <td>${escapeHtml(rule.status || 'unknown')}</td>
+                            <td>${escapeHtml(rule.chain || '-')}</td>
+                            <td>${escapeHtml(rule.last_error || '-')}</td>
+                        </tr>
+                    `).join('');
+
+                    return `
+                        <div class="card" style="margin-bottom: 12px;">
+                            <div class="card-body" style="padding: 12px;">
+                                <div style="display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                                    <div>
+                                        <strong>Port ${portGroup.port}/tcp</strong>
+                                        <div style="font-size: 0.85rem; color: var(--text-muted);">
+                                            ${portGroup.active_rules || 0} active rule(s), ${portGroup.error_rules || 0} error rule(s)
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="overflow-x: auto; margin-top: 12px;">
+                                    <table class="logs-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Rule</th>
+                                                <th>Status</th>
+                                                <th>Chain</th>
+                                                <th>Last Error</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>${ruleRows}</tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('') : '<p style="color: var(--text-muted);">No tracked firewall rules for this instance.</p>';
+
+                showInstanceModal(
+                    `Firewall: ${instanceId}`,
+                    `
+                        <div style="display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
+                            <div>
+                                <div><strong>Policy:</strong> ${escapeHtml(policyLabel)}</div>
+                                <div><strong>Owner:</strong> ${escapeHtml(ownerName)}</div>
+                                <div><strong>Challenge:</strong> ${escapeHtml(instance.challenge_name || instance.challenge_id || '-')}</div>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: start;">
+                                <button class="btn btn-secondary btn-sm" onclick="reapplyInstanceFirewall(${jsArg(instanceId)})">Reapply Rules</button>
+                            </div>
+                        </div>
+                        ${portsHtml}
+                    `
+                );
+            } catch (error) {
+                showToast(error.message || 'Failed to load firewall status', 'error');
+            }
+        }
+
+        async function reapplyInstanceFirewall(instanceId) {
+            try {
+                showToast(`Reapplying firewall rules for ${instanceId}...`, 'info');
+                const data = await adminApi(`/admin/api/firewall/reapply/${encodeURIComponent(instanceId)}`, 'POST');
+                showToast(data.message || 'Firewall rules re-applied', data.success === false ? 'warning' : 'success');
+                await Promise.all([
+                    loadFirewallStatus({ suppressToast: true }),
+                    showInstanceFirewall(instanceId)
+                ]);
+            } catch (error) {
+                showToast(error.message || 'Failed to reapply firewall rules', 'error');
             }
         }
 
@@ -4806,50 +4927,129 @@ ${rows}
         // =============================================================================
 
         let allMonitoringInstances = [];
+        let monitoringMetricsSampled = false;
+
+        function formatMetricNumber(value, digits = 1, fallback = '-') {
+            const num = Number(value);
+            return Number.isFinite(num) ? num.toFixed(digits) : fallback;
+        }
+
+        function updateMonitoringSystemCards(systemData) {
+            document.getElementById('stat-total-containers').textContent = systemData.total_containers ?? '-';
+            document.getElementById('stat-running-containers').textContent = systemData.running_containers ?? '-';
+
+            document.getElementById('stat-total-cpu').textContent = formatMetricNumber(systemData.loadavg_1, 2);
+            document.getElementById('stat-cpu-cores').textContent =
+                `5m ${formatMetricNumber(systemData.loadavg_5, 2)} | 15m ${formatMetricNumber(systemData.loadavg_15, 2)} | ${systemData.host_cpu_cores ?? '-'} core(s)`;
+
+            document.getElementById('stat-total-memory').textContent =
+                `${formatMetricNumber(systemData.host_memory_percent, 1, '0.0')}%`;
+            document.getElementById('stat-host-memory').textContent =
+                `${formatMetricNumber(systemData.host_memory_used_mb, 0, '0')} / ${formatMetricNumber(systemData.host_memory_total_mb, 0, '0')} MB | ` +
+                `Disk ${formatMetricNumber(systemData.disk_percent, 1, '0.0')}% (${formatMetricNumber(systemData.disk_used_gb, 1, '0.0')} / ${formatMetricNumber(systemData.disk_total_gb, 1, '0.0')} GB)`;
+        }
+
+        function updateFirewallCards(data) {
+            document.getElementById('stat-firewall-enabled').textContent = data.enabled ? 'Enabled' : 'Disabled';
+            document.getElementById('stat-firewall-backend').textContent =
+                `${data.backend || '-'}${data.backend_available ? ' ready' : ' unavailable'}`;
+            document.getElementById('stat-firewall-rules').textContent = data.active_rule_count ?? 0;
+            document.getElementById('stat-firewall-instances').textContent =
+                `${data.tracked_instance_count ?? 0} tracked instance(s)`;
+            document.getElementById('stat-firewall-stale').textContent = data.stale_instance_count ?? 0;
+            document.getElementById('stat-firewall-errors').textContent =
+                `${data.error_rule_count ?? 0} error rule(s)`;
+            document.getElementById('stat-firewall-policy').textContent =
+                `${data.conn_limit_per_ip ?? '-'} conn/IP, ${data.rate_per_minute ?? '-'} new/min`;
+            document.getElementById('stat-firewall-chain').textContent =
+                `${data.chain || '-'} | ${data.reject_mode || '-'}${data.use_nsenter ? ' | nsenter' : ''}`;
+
+            const note = document.getElementById('firewall-status-note');
+            if (!data.enabled) {
+                note.textContent = 'Firewall rate limits are disabled. Instances are running without host-level connlimit/hashlimit rules.';
+                return;
+            }
+            if (!data.backend_available) {
+                note.textContent = `Firewall backend unavailable: ${data.backend_detail || 'unknown error'}`;
+                return;
+            }
+
+            note.textContent =
+                `Host-side rate limits are active on ${data.chain || 'DOCKER-USER'} with ${data.conn_limit_per_ip ?? '-'} concurrent connection(s) per IP, ` +
+                `${data.rate_per_minute ?? '-'} new connection(s) per minute, burst ${data.rate_burst ?? '-'} (${data.reject_mode || 'reject'}).`;
+        }
+
+        async function loadFirewallStatus(options = {}) {
+            const suppressToast = Boolean(options.suppressToast);
+            try {
+                const data = await adminApiWithTimeout('/admin/api/firewall/status', 5000);
+                updateFirewallCards(data);
+                return data;
+            } catch (error) {
+                document.getElementById('firewall-status-note').textContent =
+                    error.message || 'Failed to load firewall status';
+                if (!suppressToast) {
+                    showToast(error.message || 'Failed to load firewall status', 'error');
+                }
+                throw error;
+            }
+        }
+
+        async function cleanupFirewallRules() {
+            try {
+                showToast('Cleaning up stale firewall rules...', 'info');
+                const data = await adminApi('/admin/api/firewall/cleanup', 'POST');
+                showToast(data.message || 'Firewall cleanup complete', data.failed_rules ? 'warning' : 'success');
+                await loadFirewallStatus({ suppressToast: true });
+            } catch (error) {
+                showToast(error.message || 'Failed to cleanup firewall rules', 'error');
+            }
+        }
 
         async function loadMonitoringData(options = {}) {
             if (monitoringLoadInFlight) return;
             monitoringLoadInFlight = true;
             try {
                 const includeMetrics = Boolean(options.includeMetrics);
+                monitoringMetricsSampled = includeMetrics;
                 const offset = (monitoringInstancesPage - 1) * MONITORING_INSTANCES_PAGE_SIZE;
                 const metricsParam = includeMetrics ? '&include_metrics=true' : '';
 
-                const [systemData, instancesData] = await Promise.all([
+                const [systemResult, instancesResult, firewallResult] = await Promise.allSettled([
                     adminApiWithTimeout('/admin/api/monitoring/system', 5000),
                     adminApiWithTimeout(
                         `/admin/api/monitoring/instances?limit=${MONITORING_INSTANCES_PAGE_SIZE}&offset=${offset}${metricsParam}`,
                         includeMetrics ? 25000 : 7000
-                    )
+                    ),
+                    loadFirewallStatus({ suppressToast: true })
                 ]);
 
-                // Update system stats
-                document.getElementById('stat-total-containers').textContent = systemData.total_containers;
-                document.getElementById('stat-running-containers').textContent = systemData.running_containers;
-                document.getElementById('stat-total-cpu').textContent = systemData.container_stats_sampled
-                    ? systemData.total_cpu_percent.toFixed(2) + '%'
-                    : 'On demand';
-                document.getElementById('stat-cpu-cores').textContent = systemData.host_cpu_cores + ' cores available';
-                document.getElementById('stat-total-memory').textContent = systemData.container_stats_sampled
-                    ? systemData.total_memory_mb.toFixed(0) + ' MB'
-                    : 'On demand';
+                if (systemResult.status === 'fulfilled') {
+                    updateMonitoringSystemCards(systemResult.value);
+                } else {
+                    console.error('Failed to load system monitoring data:', systemResult.reason);
+                }
 
-                const memPercent = systemData.host_memory_total_mb > 0
-                    ? ((systemData.host_memory_used_mb / systemData.host_memory_total_mb) * 100).toFixed(1)
-                    : '0';
-                document.getElementById('stat-host-memory').textContent =
-                    `${systemData.host_memory_used_mb.toFixed(0)} / ${systemData.host_memory_total_mb.toFixed(0)} MB (${memPercent}%)`;
+                if (firewallResult.status === 'rejected') {
+                    console.error('Failed to load firewall status:', firewallResult.reason);
+                }
 
-                // Store and render instances
-                allMonitoringInstances = instancesData.instances || [];
-                monitoringInstancesTotal = instancesData.total_instances || allMonitoringInstances.length;
-                const totalPages = Math.max(1, Math.ceil(monitoringInstancesTotal / MONITORING_INSTANCES_PAGE_SIZE));
-                monitoringInstancesPage = Math.max(1, Math.min(monitoringInstancesPage, totalPages));
-                renderMonitoringInstances();
+                if (instancesResult.status === 'fulfilled') {
+                    allMonitoringInstances = instancesResult.value.instances || [];
+                    monitoringInstancesTotal = instancesResult.value.total_instances || allMonitoringInstances.length;
+                    const totalPages = Math.max(1, Math.ceil(monitoringInstancesTotal / MONITORING_INSTANCES_PAGE_SIZE));
+                    monitoringInstancesPage = Math.max(1, Math.min(monitoringInstancesPage, totalPages));
+                    renderMonitoringInstances();
+                } else {
+                    console.error('Failed to load monitoring instances:', instancesResult.reason);
+                    throw instancesResult.reason;
+                }
+                return true;
 
             } catch (error) {
                 console.error('Failed to load monitoring data:', error);
                 showToast('Failed to load monitoring data', 'error');
+                return false;
             } finally {
                 monitoringLoadInFlight = false;
             }
@@ -4876,7 +5076,11 @@ ${rows}
             }
 
             if (instances.length === 0) {
-                container.innerHTML = '<p style="text-align: center; padding: 2rem; color: var(--text-muted);">No instances found</p>';
+                container.innerHTML = `<p style="text-align: center; padding: 2rem; color: var(--text-muted);">${
+                    showHighUsageOnly
+                        ? 'No sampled instance on this page is above the high-usage threshold.'
+                        : 'No instances found'
+                }</p>`;
                 const totalPages = Math.max(1, Math.ceil(monitoringInstancesTotal / MONITORING_INSTANCES_PAGE_SIZE));
                 updatePagination('monitoring-instances', monitoringInstancesPage, totalPages, monitoringInstancesTotal);
                 return;
@@ -4894,6 +5098,11 @@ ${rows}
                 const avgMemPercent = instanceContainers.reduce((sum, c) => sum + c.memory_percent, 0) / Math.max(1, instanceContainers.length);
                 const memClass = avgMemPercent > 80 ? 'danger' : avgMemPercent > 60 ? 'warning' : 'success';
                 const statusClass = inst.status === 'running' ? 'success' : inst.status === 'error' ? 'danger' : 'warning';
+                const portsStr = Object.entries(inst.ports || {}).map(([internalPort, externalPort]) => `${internalPort}→${externalPort}`).join(', ');
+                const expiresIn = Number.isFinite(inst.seconds_until_expiry) ? formatDuration(inst.seconds_until_expiry) : 'unknown';
+                const sampleLabel = hasMetrics
+                    ? `Sampled ${formatMetricNumber(cpuValue, 1)}% CPU / ${formatMetricNumber(memoryValue, 0)} MB`
+                    : (inst.message ? escapeHtml(inst.message) : (monitoringMetricsSampled ? 'Metrics unavailable' : 'Not sampled on this page'));
 
                 const containersHtml = instanceContainers.map(c => {
                     const containerCpuClass = c.cpu_percent > 80 ? 'danger' : c.cpu_percent > 50 ? 'warning' : 'success';
@@ -4928,6 +5137,10 @@ ${rows}
                                     <p style="margin: 0.35rem 0 0 0; font-size: 0.85rem;">
                                         <span class="forensics-type ${statusClass}">${escapeHtml(inst.status || 'unknown')}</span>
                                         <span style="color: var(--text-muted); margin-left: 0.5rem;">${inst.container_count || 0} container(s)</span>
+                                        <span style="color: var(--text-muted); margin-left: 0.5rem;">Ports ${escapeHtml(portsStr || 'none')}</span>
+                                    </p>
+                                    <p style="margin: 0.35rem 0 0 0; font-size: 0.8rem; color: var(--text-muted);">
+                                        Expires in ${escapeHtml(expiresIn)} | ${sampleLabel}
                                     </p>
                                 </div>
                                 <div style="text-align: right;">
@@ -4935,19 +5148,20 @@ ${rows}
                                         <div>
                                             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Total CPU</div>
                                             <span class="forensics-type ${cpuClass}" style="font-size: 1.2rem; font-weight: bold;">
-                                                ${hasMetrics ? cpuValue.toFixed(1) + '%' : 'Live'}
+                                                ${hasMetrics ? cpuValue.toFixed(1) + '%' : 'On demand'}
                                             </span>
                                         </div>
                                         <div>
                                             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Total RAM</div>
                                             <span class="forensics-type ${memClass}" style="font-size: 1.2rem; font-weight: bold;">
-                                                ${hasMetrics ? memoryValue.toFixed(0) + ' MB' : 'Manual'}
+                                                ${hasMetrics ? memoryValue.toFixed(0) + ' MB' : 'On demand'}
                                             </span>
                                         </div>
                                     </div>
                                     <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem;">
-                                        <button class="btn btn-secondary btn-sm" onclick="showInstanceMetrics('${escapeHtml(inst.instance_id)}')">Metrics</button>
-                                        <button class="btn btn-secondary btn-sm" onclick="showInstanceLogs('${escapeHtml(inst.instance_id)}')">Logs</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="showInstanceFirewall(${jsArg(inst.instance_id)})">Firewall</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="showInstanceMetrics(${jsArg(inst.instance_id)})">Metrics</button>
+                                        <button class="btn btn-secondary btn-sm" onclick="showInstanceLogs(${jsArg(inst.instance_id)})">Logs</button>
                                     </div>
                                 </div>
                             </div>
@@ -4974,14 +5188,18 @@ ${rows}
 
         async function refreshMonitoring() {
             showToast('Refreshing monitoring...', 'info');
-            await loadMonitoringData();
-            showToast('Monitoring refreshed', 'success');
+            const ok = await loadMonitoringData();
+            if (ok) {
+                showToast('Monitoring refreshed', 'success');
+            }
         }
 
         async function sampleMonitoringPage() {
             showToast('Sampling current page metrics...', 'info');
-            await loadMonitoringData({ includeMetrics: true });
-            showToast('Page metrics sampled', 'success');
+            const ok = await loadMonitoringData({ includeMetrics: true });
+            if (ok) {
+                showToast('Page metrics sampled', 'success');
+            }
         }
 
         // =============================================================================

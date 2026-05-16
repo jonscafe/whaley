@@ -49,6 +49,7 @@
 - **CTFd Integration** — Validate users and admin RBAC via CTFd access tokens
 - **No-Auth Mode** — IP-based identification for open events
 - **Network Isolation** — Each instance in its own Docker network
+- **Host Firewall Rate Limits** — Per-instance connlimit/hashlimit rules on published challenge ports
 - **Distributed Locking** — Redis-based locks for multi-worker safety
 - **Fork Bomb Protection** — PID limits per container
 
@@ -64,11 +65,12 @@
 - **Database Persistence** — Flag mappings and suspicious submissions survive restarts with duplicate protection
 
 ### 📊 Monitoring & Admin
-- **Real-Time Metrics** — Live CPU/RAM usage per container
+- **Host-First Monitoring** — Fast host load/memory/disk snapshot that stays responsive at high instance counts
+- **On-Demand Page Sampling** — Sample Docker CPU/RAM only for the visible monitoring page when you need detail
 - **Prometheus Metrics** — Protected `/metrics` endpoint for external scraping
 - **Instance Forensics** — Capture logs on termination or on-demand
 - **Native Packet Capture** — Per-instance tcpdump sidecar, searchable flows, payload viewer, lazy PCAP indexing, and raw PCAP download
-- **Admin Dashboard** — Web UI for monitoring and management, including manual spawn/destroy and paginated high-volume views
+- **Admin Dashboard** — Web UI for monitoring and management, including manual spawn/destroy, firewall status, and paginated high-volume views
 - **Per-Instance Logs & Metrics** — Inspect Docker logs and CPU/RAM/network/block I/O from the dashboard
 - **Challenge Manager** — Upload & edit challenges without SSH
 - **Challenge Toggle** — Activate/deactivate challenges from admin panel
@@ -164,6 +166,15 @@ NETWORK_ISOLATION_ENABLED=true
 NETWORK_ICC_DISABLED=true
 NETWORK_SUBNET_BASE=10.240.0.0/16
 NETWORK_SUBNET_PREFIX=28
+
+# Host Firewall Rate Limits (recommended for public events)
+FIREWALL_RATE_LIMIT_ENABLED=true
+FIREWALL_CHAIN=DOCKER-USER
+FIREWALL_CONN_LIMIT_PER_IP=60
+FIREWALL_RATE_PER_MINUTE=120
+FIREWALL_RATE_BURST=240
+FIREWALL_REJECT_MODE=reject
+
 TRUSTED_PROXIES=127.0.0.1,::1     # Only these proxies may set client IP headers
 
 # Resource Limits (enforced on all containers)
@@ -177,6 +188,8 @@ CONTAINER_PIDS_LIMIT=256          # Max PIDs per container (fork bomb protection
 > 🔐 **Admin access**: In `AUTH_MODE=ctfd`, Whaley validates the submitted CTFd access token with CTFd's `/api/v1/users/me`, then fetches `/api/v1/users/{id}` and only enables `/admin` when that detailed user record has `type: "admin"`. In `AUTH_MODE=none`, admin APIs use the local `ADMIN_KEY` fallback.
 
 > 🌐 **Subnet pool**: Whaley uses `NETWORK_SUBNET_BASE` / `NETWORK_SUBNET_PREFIX` for both its per-instance isolation network and compose-defined challenge networks. This keeps multi-network challenges from exhausting Docker's default address pools during large events.
+
+> 🛡️ **Host rate limits**: Enable `FIREWALL_RATE_LIMIT_ENABLED=true` to install per-instance `connlimit` + `hashlimit` rules on Docker published ports via `DOCKER-USER`. If Whaley itself runs inside a container, set `FIREWALL_USE_NSENTER=true` or provide equivalent host firewall access.
 
 > 📈 **Prometheus metrics**: Set `METRICS_SECRET` to enable `/metrics`. Scrape with either `Authorization: Bearer <secret>` or `X-Metrics-Secret: <secret>`.
 
@@ -415,7 +428,7 @@ Challenge uploads reject path traversal, absolute paths, and symlinks. Runtime c
 
 ### Admin Instance Operations
 
-The admin dashboard can manually spawn instances for a chosen user/team owner, force-destroy any active instance, and inspect live per-instance Docker logs and resource metrics. The Packet Capture tab adds per-instance flow summaries, payload search, raw PCAP downloads, and retention cleanup controls. Failed spawn/stop actions return the backend error message directly in the UI, which makes broken compose files, resource exhaustion, and Docker cleanup issues easier to diagnose during an event.
+The admin dashboard can manually spawn instances for a chosen user/team owner, force-destroy any active instance, inspect live per-instance Docker logs, and sample detailed resource metrics on demand. The Monitoring tab now uses a cheap host-level snapshot by default, so it stays usable even when hundreds of instances are alive, and it also shows firewall/rate-limit status plus per-instance rule details. The Packet Capture tab adds per-instance flow summaries, payload search, raw PCAP downloads, and retention cleanup controls. Failed spawn/stop actions return the backend error message directly in the UI, which makes broken compose files, resource exhaustion, firewall misconfiguration, and Docker cleanup issues easier to diagnose during an event.
 
 ### Enforced Resource Limits
 

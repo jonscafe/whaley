@@ -107,6 +107,34 @@ class InstanceState(Base):
         return f"<InstanceState(id={self.instance_id}, status={self.status})>"
 
 
+class FirewallRuleState(Base):
+    """Tracked host firewall rules managed by Whaley."""
+    __tablename__ = "firewall_rule_states"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    instance_id = Column(String(128), nullable=False, index=True)
+    challenge_id = Column(String(128), nullable=True, index=True)
+    owner_id = Column(String(64), nullable=True, index=True)
+    port = Column(Integer, nullable=False, index=True)
+    backend = Column(String(32), nullable=False)
+    chain = Column(String(128), nullable=False)
+    rule_kind = Column(String(32), nullable=False)
+    rule_args = Column(JSON, nullable=False)
+    comment = Column(String(255), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="active")
+    last_error = Column(Text, nullable=True)
+    applied_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_firewall_instance_status', 'instance_id', 'status'),
+        Index('uq_firewall_instance_port_kind', 'instance_id', 'port', 'rule_kind', unique=True),
+    )
+
+    def __repr__(self):
+        return f"<FirewallRuleState(instance={self.instance_id}, port={self.port}, kind={self.rule_kind})>"
+
+
 class FlagMappingModel(Base):
     """Dynamic flag assigned to a user/team for a challenge."""
     __tablename__ = "flag_mappings"

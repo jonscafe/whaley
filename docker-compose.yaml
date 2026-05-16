@@ -77,6 +77,9 @@ services:
       - PCAP_RETENTION_HOURS=${PCAP_RETENTION_HOURS:-24}
       - PCAP_SNAP_LEN=${PCAP_SNAP_LEN:-1024}
       - PCAP_BPF_FILTER=${PCAP_BPF_FILTER:-not (host 127.0.0.11 and port 53)}
+      # Firewall (Experimental)
+      - FIREWALL_RATE_LIMIT_ENABLED=false
+      - FIREWALL_USE_NSENTER=false
     restart: unless-stopped
     networks:
       - ctf-network

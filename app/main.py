@@ -41,6 +41,7 @@ from .docker_manager import DockerManager
 from .logger import get_event_logger, init_event_logger, EventType
 from .flag_manager import get_flag_manager
 from .forensics import get_forensics_manager
+from .firewall_manager import get_firewall_manager
 from .pcap_manager import get_pcap_manager
 from .database.connection import init_database, close_database
 from .distributed_lock import init_lock_manager, close_lock_manager
@@ -353,6 +354,15 @@ async def _load_settings_from_db():
         "NETWORK_ICC_DISABLED": lambda v: str(v).lower() in ("true", "1", "yes"),
         "NETWORK_SUBNET_BASE": str,
         "NETWORK_SUBNET_PREFIX": int,
+        "FIREWALL_RATE_LIMIT_ENABLED": lambda v: str(v).lower() in ("true", "1", "yes"),
+        "FIREWALL_BACKEND": str,
+        "FIREWALL_CHAIN": str,
+        "FIREWALL_CONN_LIMIT_PER_IP": int,
+        "FIREWALL_RATE_PER_MINUTE": int,
+        "FIREWALL_RATE_BURST": int,
+        "FIREWALL_REJECT_MODE": str,
+        "FIREWALL_STRICT": lambda v: str(v).lower() in ("true", "1", "yes"),
+        "FIREWALL_USE_NSENTER": lambda v: str(v).lower() in ("true", "1", "yes"),
         "FORENSICS_AUTO_CAPTURE": lambda v: str(v).lower() in ("true", "1", "yes"),
         "FORENSICS_RETENTION_HOURS": int,
         "PCAP_ENABLED": lambda v: str(v).lower() in ("true", "1", "yes"),
@@ -411,6 +421,12 @@ def _apply_runtime_settings() -> None:
         pcap.refresh_policy_from_settings()
     except Exception as e:
         print(f"[Settings] Warning: Failed to apply PCAP setting: {e}")
+
+    try:
+        from .firewall_manager import get_firewall_manager
+        get_firewall_manager().refresh_settings()
+    except Exception as e:
+        print(f"[Settings] Warning: Failed to apply firewall setting: {e}")
 
 
 async def _persist_setting_override(key: str, value: object) -> None:
@@ -2409,6 +2425,12 @@ async def admin_monitoring_system(
             "host_memory_total_mb": host_info["memory_total_mb"],
             "host_memory_used_mb": host_info["memory_used_mb"],
             "host_memory_percent": host_info["memory_percent"],
+            "loadavg_1": host_info["loadavg_1"],
+            "loadavg_5": host_info["loadavg_5"],
+            "loadavg_15": host_info["loadavg_15"],
+            "disk_total_gb": host_info["disk_total_gb"],
+            "disk_used_gb": host_info["disk_used_gb"],
+            "disk_percent": host_info["disk_percent"],
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
@@ -2424,6 +2446,12 @@ async def admin_monitoring_system(
         "host_memory_total_mb": metrics.host_memory_total_mb,
         "host_memory_used_mb": metrics.host_memory_used_mb,
         "host_memory_percent": metrics.host_memory_percent,
+        "loadavg_1": metrics.loadavg_1,
+        "loadavg_5": metrics.loadavg_5,
+        "loadavg_15": metrics.loadavg_15,
+        "disk_total_gb": metrics.disk_total_gb,
+        "disk_used_gb": metrics.disk_used_gb,
+        "disk_percent": metrics.disk_percent,
         "timestamp": metrics.timestamp
     }
 
@@ -2555,6 +2583,64 @@ async def admin_monitoring_instances(
         "offset": offset,
         "include_metrics": include_metrics,
         "has_more": offset + limit < total_active
+    }
+
+
+# =============================================================================
+# Firewall / Rate-Limit API
+# =============================================================================
+
+
+@app.get("/admin/api/firewall/status")
+async def admin_firewall_status(_: bool = Depends(verify_admin_key)):
+    """Get global firewall/rate-limit status."""
+    firewall = get_firewall_manager()
+    return await firewall.get_status(active_instance_ids=docker_manager.instances.keys())
+
+
+@app.get("/admin/api/firewall/instances/{instance_id}")
+async def admin_firewall_instance_status(
+    instance_id: str,
+    _: bool = Depends(verify_admin_key)
+):
+    """Get tracked firewall rules for one instance."""
+    instance = docker_manager.instances.get(instance_id)
+    payload = await get_firewall_manager().get_instance_status(instance_id)
+    payload["instance"] = _instance_summary(instance) if instance else None
+    return payload
+
+
+@app.post("/admin/api/firewall/cleanup")
+async def admin_firewall_cleanup(_: bool = Depends(verify_admin_key)):
+    """Remove stale tracked firewall rules for dead instances."""
+    summary = await get_firewall_manager().cleanup_stale_rules(docker_manager.instances.keys())
+    return {
+        "success": True,
+        "message": f"Cleaned {summary['stale_instances']} stale firewall instance(s)",
+        **summary,
+    }
+
+
+@app.post("/admin/api/firewall/reapply/{instance_id}")
+async def admin_firewall_reapply(
+    instance_id: str,
+    _: bool = Depends(verify_admin_key)
+):
+    """Re-apply tracked firewall rules for one active instance."""
+    instance = docker_manager.instances.get(instance_id)
+    if not instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    summary = await get_firewall_manager().apply_instance_rules(
+        instance_id=instance.instance_id,
+        ports=list(instance.ports.values()),
+        owner_id=instance.owner_id or instance.user_id,
+        challenge_id=instance.challenge_id,
+    )
+    return {
+        "success": not bool(summary.get("failed_rules")),
+        "message": "Firewall rules re-applied" if not summary.get("failed_rules") else "Firewall rules applied with errors",
+        **summary,
     }
 
 
@@ -3194,6 +3280,15 @@ EDITABLE_SETTINGS = {
     "NETWORK_ICC_DISABLED": {"type": "bool", "label": "Disable Inter-Container Comm."},
     "NETWORK_SUBNET_BASE": {"type": "str", "label": "Network Subnet Base"},
     "NETWORK_SUBNET_PREFIX": {"type": "int", "min": 24, "max": 30, "label": "Network Subnet Prefix"},
+    "FIREWALL_RATE_LIMIT_ENABLED": {"type": "bool", "label": "Firewall Rate Limits Enabled"},
+    "FIREWALL_BACKEND": {"type": "select", "options": ["iptables"], "label": "Firewall Backend"},
+    "FIREWALL_CHAIN": {"type": "str", "label": "Firewall Chain"},
+    "FIREWALL_CONN_LIMIT_PER_IP": {"type": "int", "min": 1, "max": 10000, "label": "Conn Limit Per IP"},
+    "FIREWALL_RATE_PER_MINUTE": {"type": "int", "min": 1, "max": 100000, "label": "New Conn Rate Per Minute"},
+    "FIREWALL_RATE_BURST": {"type": "int", "min": 1, "max": 100000, "label": "Firewall Rate Burst"},
+    "FIREWALL_REJECT_MODE": {"type": "select", "options": ["reject", "drop"], "label": "Firewall Reject Mode"},
+    "FIREWALL_STRICT": {"type": "bool", "label": "Firewall Strict Spawn Mode"},
+    "FIREWALL_USE_NSENTER": {"type": "bool", "label": "Firewall Use nsenter Host Netns"},
     "FORENSICS_AUTO_CAPTURE": {"type": "bool", "label": "Forensics Auto Capture"},
     "FORENSICS_RETENTION_HOURS": {"type": "int", "min": 1, "max": 8760, "label": "Forensics Retention (hours)"},
     "PCAP_MAX_SIZE_MB": {"type": "int", "min": 1, "max": 1024, "label": "PCAP Max File Size (MB)"},

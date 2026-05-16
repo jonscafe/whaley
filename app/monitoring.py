@@ -7,6 +7,8 @@ Provides real-time CPU and memory metrics for:
 - Resource usage trends
 """
 import asyncio
+import os
+import shutil
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
@@ -62,6 +64,12 @@ class SystemMetrics:
     host_memory_total_mb: float
     host_memory_used_mb: float
     host_memory_percent: float
+    loadavg_1: float
+    loadavg_5: float
+    loadavg_15: float
+    disk_total_gb: float
+    disk_used_gb: float
+    disk_percent: float
     timestamp: str
 
 
@@ -286,6 +294,12 @@ class MonitoringManager:
                 host_memory_total_mb=host_info["memory_total_mb"],
                 host_memory_used_mb=host_info["memory_used_mb"],
                 host_memory_percent=host_info["memory_percent"],
+                loadavg_1=host_info["loadavg_1"],
+                loadavg_5=host_info["loadavg_5"],
+                loadavg_15=host_info["loadavg_15"],
+                disk_total_gb=host_info["disk_total_gb"],
+                disk_used_gb=host_info["disk_used_gb"],
+                disk_percent=host_info["disk_percent"],
                 timestamp=utcnow().isoformat()
             )
             
@@ -301,6 +315,12 @@ class MonitoringManager:
                 host_memory_total_mb=0.0,
                 host_memory_used_mb=0.0,
                 host_memory_percent=0.0,
+                loadavg_1=0.0,
+                loadavg_5=0.0,
+                loadavg_15=0.0,
+                disk_total_gb=0.0,
+                disk_used_gb=0.0,
+                disk_percent=0.0,
                 timestamp=utcnow().isoformat()
             )
     
@@ -332,12 +352,28 @@ class MonitoringManager:
                 
                 mem_used = mem_total - mem_available
                 mem_percent = (mem_used / mem_total * 100) if mem_total > 0 else 0.0
+
+                try:
+                    loadavg_1, loadavg_5, loadavg_15 = os.getloadavg()
+                except (AttributeError, OSError):
+                    loadavg_1, loadavg_5, loadavg_15 = 0.0, 0.0, 0.0
+
+                disk = shutil.disk_usage("/")
+                disk_total_gb = disk.total / (1024 ** 3)
+                disk_used_gb = (disk.total - disk.free) / (1024 ** 3)
+                disk_percent = ((disk.total - disk.free) / disk.total * 100) if disk.total > 0 else 0.0
                 
                 return {
                     "cpu_cores": cpu_cores,
                     "memory_total_mb": round(mem_total, 2),
                     "memory_used_mb": round(mem_used, 2),
-                    "memory_percent": round(mem_percent, 2)
+                    "memory_percent": round(mem_percent, 2),
+                    "loadavg_1": round(loadavg_1, 2),
+                    "loadavg_5": round(loadavg_5, 2),
+                    "loadavg_15": round(loadavg_15, 2),
+                    "disk_total_gb": round(disk_total_gb, 2),
+                    "disk_used_gb": round(disk_used_gb, 2),
+                    "disk_percent": round(disk_percent, 2),
                 }
             except:
                 # Fallback for non-Linux or if /proc/meminfo not available
@@ -345,7 +381,13 @@ class MonitoringManager:
                     "cpu_cores": cpu_cores,
                     "memory_total_mb": 0.0,
                     "memory_used_mb": 0.0,
-                    "memory_percent": 0.0
+                    "memory_percent": 0.0,
+                    "loadavg_1": 0.0,
+                    "loadavg_5": 0.0,
+                    "loadavg_15": 0.0,
+                    "disk_total_gb": 0.0,
+                    "disk_used_gb": 0.0,
+                    "disk_percent": 0.0,
                 }
                 
         except Exception as e:
@@ -354,7 +396,13 @@ class MonitoringManager:
                 "cpu_cores": 1,
                 "memory_total_mb": 0.0,
                 "memory_used_mb": 0.0,
-                "memory_percent": 0.0
+                "memory_percent": 0.0,
+                "loadavg_1": 0.0,
+                "loadavg_5": 0.0,
+                "loadavg_15": 0.0,
+                "disk_total_gb": 0.0,
+                "disk_used_gb": 0.0,
+                "disk_percent": 0.0,
             }
 
 

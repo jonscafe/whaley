@@ -111,6 +111,15 @@ python -m uvicorn app.main:app --reload
 | `ADMIN_KEY` | - | Local admin dashboard key used when `AUTH_MODE=none` |
 | `CTFD_API_KEY` | - | CTFd admin API key for dynamic flags, sync wizard, and team-mode detection |
 | `METRICS_SECRET` | - | Enables protected Prometheus `/metrics` endpoint when set |
+| `FIREWALL_RATE_LIMIT_ENABLED` | `false` | Enable host-level per-instance connlimit/hashlimit rules on published ports |
+| `FIREWALL_BACKEND` | `iptables` | Host firewall backend (`iptables` currently supported) |
+| `FIREWALL_CHAIN` | `DOCKER-USER` | Firewall chain Whaley manages for published-port protection |
+| `FIREWALL_CONN_LIMIT_PER_IP` | `60` | Max concurrent TCP connections per source IP per published port |
+| `FIREWALL_RATE_PER_MINUTE` | `120` | Max new TCP connections per minute per source IP per published port |
+| `FIREWALL_RATE_BURST` | `240` | Burst allowance for the per-IP new connection limit |
+| `FIREWALL_REJECT_MODE` | `reject` | `reject` sends TCP reset; `drop` silently discards |
+| `FIREWALL_STRICT` | `false` | Fail spawn if firewall rule apply fails instead of running degraded |
+| `FIREWALL_USE_NSENTER` | `false` | Run firewall commands via `nsenter -t 1 -n` to reach host netns |
 | `DYNAMIC_FLAGS_ENABLED` | `false` | Enable per-user dynamic flags |
 | `FLAG_PREFIX` | `FLAG` | Prefix for generated flags (e.g., `FLAG{...}`) |
 | `PCAP_ENABLED` | `true` | Enable tcpdump sidecars for new instance spawns |
@@ -286,6 +295,12 @@ All admin endpoints are also rate-limited by client IP using `ADMIN_RATE_LIMIT`.
 | `/admin/api/instances/{id}` | DELETE | Force-stop/destroy an instance |
 | `/admin/api/instances/{id}/logs` | GET | Get live Docker logs for an instance |
 | `/admin/api/instances/{id}/metrics` | GET | Get live per-instance resource metrics |
+| `/admin/api/monitoring/system` | GET | Get host snapshot and optional aggregate container stats |
+| `/admin/api/monitoring/instances` | GET | Get paginated instance inventory; Docker metrics are opt-in per page |
+| `/admin/api/firewall/status` | GET | Get global host firewall/rate-limit status |
+| `/admin/api/firewall/instances/{id}` | GET | Get tracked firewall rules for one instance |
+| `/admin/api/firewall/cleanup` | POST | Remove stale tracked firewall rules for dead instances |
+| `/admin/api/firewall/reapply/{id}` | POST | Re-apply firewall rules for one active instance |
 | `/admin/api/logs` | GET | Get event logs (with filtering) |
 
 ### Packet Capture (requires admin auth)
@@ -604,14 +619,16 @@ The admin dashboard has these tabs:
 - 🧹 **Retention Cleanup** - Manually prune captures older than the configured retention window
 
 ### 6. Monitoring
-- 🔍 **System Metrics** - View host/container CPU and memory usage
-- 📦 **Per-Instance Metrics** - Identify heavy instances and containers
+- 🔍 **Host Snapshot** - View host load, memory, disk usage, and tracked container counts without sweeping Docker stats
+- 📦 **Per-Instance Inventory** - Browse paginated active instances without freezing the dashboard
+- 🎯 **Sample Page Metrics** - Collect Docker CPU/RAM only for the current monitoring page when you need detail
+- 🛡 **Firewall Status** - Inspect connlimit/hashlimit policy, stale rule count, and per-instance rule state
 - 📡 **Prometheus Export** - Use `/metrics` with `METRICS_SECRET` for external scraping
 
 ### 7. Settings
 - ⚙️ **Live Settings** - Update editable Whaley settings without restarting the service
 
-Admin actions surface backend error messages in the UI. If a manual spawn fails because compose build failed, no ports are available, Docker is unreachable, or cleanup only partially succeeded, the dashboard shows the returned reason instead of a generic failure toast.
+Admin actions surface backend error messages in the UI. If a manual spawn fails because compose build failed, no ports are available, Docker is unreachable, firewall rule apply fails, or cleanup only partially succeeded, the dashboard shows the returned reason instead of a generic failure toast.
 
 **Log Format (JSONL):**
 ```json
@@ -877,6 +894,15 @@ services:
 | `ADMIN_RATE_LIMIT` | `150` | Admin API requests allowed per minute per client IP |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1` | Trusted reverse proxies for forwarded client IP headers |
 | `METRICS_SECRET` | - | Secret required for Prometheus `/metrics`; empty disables endpoint |
+| `FIREWALL_RATE_LIMIT_ENABLED` | `false` | Enable host-level per-instance connlimit/hashlimit rules |
+| `FIREWALL_BACKEND` | `iptables` | Firewall backend managed by Whaley |
+| `FIREWALL_CHAIN` | `DOCKER-USER` | Chain used for challenge published-port protection |
+| `FIREWALL_CONN_LIMIT_PER_IP` | `60` | Max concurrent TCP connections per source IP per published port |
+| `FIREWALL_RATE_PER_MINUTE` | `120` | Max new TCP connections per minute per source IP per published port |
+| `FIREWALL_RATE_BURST` | `240` | Burst allowance for the new connection limiter |
+| `FIREWALL_REJECT_MODE` | `reject` | Reject with TCP reset or silently drop |
+| `FIREWALL_STRICT` | `false` | Fail spawns when firewall rule apply fails |
+| `FIREWALL_USE_NSENTER` | `false` | Execute firewall commands in the host netns via `nsenter` |
 | `PCAP_ENABLED` | `true` | Enable packet-capture sidecars for new instances |
 | `PCAP_MODE` | `all` | Packet-capture policy for future spawns |
 | `PCAP_SELECTED_CHALLENGES` | - | Comma-separated challenge IDs for selected-mode capture |
@@ -1874,17 +1900,19 @@ When `METRICS_SECRET` is configured, `/metrics` also exposes:
 
 ## 🔍 Resource Monitoring
 
-Whaley includes native resource monitoring to track CPU and memory usage of containers and the host system. This helps identify resource-intensive instances and prevent server overload.
+Whaley includes native resource monitoring to track host pressure and, when requested, sampled Docker CPU/memory usage for the currently visible page of instances. This keeps the admin dashboard responsive during large events while still giving you drill-down detail when you need it.
 
 ### Features
 
 | Feature | Description | Use Case |
 |---------|-------------|----------|
-| **System Overview** | Host CPU cores, total memory, container count | Monitor overall server health |
-| **Per-Instance Metrics** | CPU & RAM usage aggregated by instance | Identify resource-hungry challenges |
+| **System Overview** | Host load average, memory, disk, and tracked container count | Monitor overall server health |
+| **Instance Inventory** | Paginated list of active instances without Docker stats by default | Keep the dashboard responsive at high instance counts |
+| **Per-Page Metrics Sampling** | CPU & RAM usage aggregated only for the visible page | Identify resource-hungry challenges without sweeping all containers |
 | **Per-Container Metrics** | Detailed metrics for each container | Pinpoint specific container issues |
 | **High Usage Filter** | Show only instances with CPU >50% or RAM >80% | Quick identification of problems |
-| **Real-Time Updates** | Refresh metrics on-demand | Live monitoring during events |
+| **Firewall Status** | Show connlimit/hashlimit policy, tracked rule counts, and stale rules | Confirm host DoS protection is active |
+| **Real-Time Updates** | Refresh host snapshot on-demand | Live monitoring during events |
 
 ### Accessing Monitoring
 
@@ -1893,12 +1921,13 @@ Whaley includes native resource monitoring to track CPU and memory usage of cont
 1. Navigate to **Admin Dashboard** → **Monitoring** tab
 2. View **System Overview** card showing:
    - Total/running containers
-   - Total CPU usage (% and cores available)
-   - Total memory usage (MB and host %)
-3. Scroll to **Instance Resource Usage** section
-4. (Optional) Enable "Show high usage only" filter
-5. Click "Refresh" button to update metrics
-6. Expand instance cards to see per-container details
+   - Host load averages and CPU core count
+   - Host memory usage and disk usage
+3. Review **Firewall Rate Limits** to confirm the backend, policy, and stale-rule count
+4. Scroll to **Instance Inventory** section
+5. (Optional) Enable "Show high usage only" filter
+6. Click **Sample Page Metrics** when you need Docker CPU/RAM details for the current page
+7. Expand instance cards to see per-container details or use the **Firewall** button for per-instance rule state
 
 #### Via API
 
@@ -1911,17 +1940,21 @@ curl -X GET "http://localhost:8000/admin/api/monitoring/system" \
 {
   "total_containers": 15,
   "running_containers": 15,
-  "total_cpu_percent": 45.3,
-  "total_memory_mb": 1024.5,
   "host_cpu_cores": 8,
   "host_memory_total_mb": 16384.0,
   "host_memory_used_mb": 8192.0,
   "host_memory_percent": 50.0,
+  "loadavg_1": 1.12,
+  "loadavg_5": 0.94,
+  "loadavg_15": 0.81,
+  "disk_total_gb": 200.0,
+  "disk_used_gb": 84.5,
+  "disk_percent": 42.3,
   "timestamp": "2026-01-09T10:30:00Z"
 }
 
-# Get per-instance metrics
-curl -X GET "http://localhost:8000/admin/api/monitoring/instances" \
+# Get the paginated instance inventory (lightweight by default)
+curl -X GET "http://localhost:8000/admin/api/monitoring/instances?limit=20&offset=0" \
      -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 
 # Response:
@@ -1934,6 +1967,36 @@ curl -X GET "http://localhost:8000/admin/api/monitoring/instances" \
       "owner_id": "user123",
       "owner_name": "alice",
       "container_count": 3,
+      "metrics_available": false,
+      "metrics_sampled": false,
+      "total_cpu_percent": null,
+      "total_memory_mb": null,
+      "containers": [],
+      "message": null
+    }
+  ],
+  "total_instances": 1,
+  "limit": 20,
+  "offset": 0,
+  "include_metrics": false
+}
+
+# Sample Docker metrics for just the current page
+curl -X GET "http://localhost:8000/admin/api/monitoring/instances?limit=20&offset=0&include_metrics=true" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+
+# Response:
+{
+  "instances": [
+    {
+      "instance_id": "web-1-abc123",
+      "challenge_id": "web-challenge",
+      "challenge_name": "Example Web Challenge",
+      "owner_id": "user123",
+      "owner_name": "alice",
+      "container_count": 3,
+      "metrics_available": true,
+      "metrics_sampled": true,
       "total_cpu_percent": 25.5,
       "total_memory_mb": 512.3,
       "containers": [
@@ -1958,6 +2021,27 @@ For a single instance, use the admin instance metrics endpoint. This is what the
 
 ```bash
 curl -X GET "http://localhost:8000/admin/api/instances/{instance_id}/metrics" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+```
+
+### Firewall Rate-Limit Status
+
+Whaley can apply host-level `connlimit` and `hashlimit` rules for each published challenge port. Rules are installed when an instance finishes spawning, removed when it stops or expires, and cleaned up periodically on startup/maintenance in case the process previously crashed.
+
+Important notes:
+
+- Whaley targets Docker published ports via `DOCKER-USER`, not plain `INPUT`
+- Matching uses the original destination port through conntrack
+- If Whaley runs inside a container, use `FIREWALL_USE_NSENTER=true` or equivalent host firewall access
+- `FIREWALL_STRICT=false` lets an instance run even if firewall rule apply fails, but the admin dashboard will show degraded status
+
+```bash
+# Global firewall status
+curl -X GET "http://localhost:8000/admin/api/firewall/status" \
+     -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
+
+# One instance's tracked rules
+curl -X GET "http://localhost:8000/admin/api/firewall/instances/web-1-abc123" \
      -H "Authorization: Bearer $CTFD_ADMIN_TOKEN"
 ```
 

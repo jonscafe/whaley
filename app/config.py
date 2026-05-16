@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     NETWORK_PREFIX: str = "whaley"  # Prefix for instance networks
     NETWORK_SUBNET_BASE: str = "10.240.0.0/16"  # Whaley-managed subnet pool for per-instance bridges
     NETWORK_SUBNET_PREFIX: int = 28  # Prefix length allocated from NETWORK_SUBNET_BASE per instance
+
+    # Host firewall rate-limiting for published challenge ports
+    FIREWALL_RATE_LIMIT_ENABLED: bool = False
+    FIREWALL_BACKEND: str = "iptables"  # currently supports iptables
+    FIREWALL_CHAIN: str = "DOCKER-USER"
+    FIREWALL_CONN_LIMIT_PER_IP: int = 60
+    FIREWALL_RATE_PER_MINUTE: int = 120
+    FIREWALL_RATE_BURST: int = 240
+    FIREWALL_REJECT_MODE: str = "reject"  # reject or drop
+    FIREWALL_STRICT: bool = False  # fail spawn if rules cannot be applied
+    FIREWALL_USE_NSENTER: bool = False  # enter host netns via `nsenter -t 1 -n`
     
     # Public URL for instance access (auto-detect if "auto" or empty)
     PUBLIC_HOST: str = "auto"

@@ -22,6 +22,7 @@ from .models import (
 from .port_manager import PortManager
 from .flag_manager import get_flag_manager
 from .forensics import get_forensics_manager
+from .firewall_manager import get_firewall_manager
 from .pcap_manager import get_pcap_manager
 from .distributed_lock import get_lock_manager
 from .docker_client import get_docker_client, DockerError
@@ -124,6 +125,7 @@ class DockerManager:
 
         # Inactive challenge IDs (loaded from DB)
         self._inactive_challenges: set = set()
+        self.firewall = get_firewall_manager()
 
     @property
     def docker(self):
@@ -460,6 +462,20 @@ class DockerManager:
         # Start containers in background
         try:
             await self._start_containers(instance, challenge, dynamic_flag=dynamic_flag)
+
+            firewall_summary = await self.firewall.apply_instance_rules(
+                instance_id=instance.instance_id,
+                ports=list(instance.ports.values()),
+                owner_id=owner_id,
+                challenge_id=challenge_id,
+            )
+            firewall_errors = list(firewall_summary.get("errors") or [])
+            if firewall_errors:
+                message = "; ".join(firewall_errors)
+                print(f"[Firewall] Rate-limit rules degraded for {instance.instance_id}: {message}")
+                if settings.FIREWALL_STRICT:
+                    raise RuntimeError(f"failed to apply firewall rules: {message}")
+
             instance.status = InstanceStatus.RUNNING
             return True, "Instance started successfully", instance
         except Exception as e:
@@ -495,6 +511,11 @@ class DockerManager:
                     await self.docker.remove_network(network_name, force=True)
                 except Exception:
                     pass
+
+            try:
+                await self.firewall.remove_instance_rules(instance.instance_id)
+            except Exception:
+                pass
 
             self._cleanup_instance_temp_dir(instance)
 
@@ -1360,6 +1381,16 @@ class DockerManager:
                     cleanup_errors.append(f"network cleanup failed: {e}")
                     print(f"Warning: Failed to remove network {network_name}: {e}")
 
+            try:
+                firewall_cleanup = await self.firewall.remove_instance_rules(instance_id)
+                if firewall_cleanup.get("failed_rules"):
+                    errors = firewall_cleanup.get("errors") or []
+                    cleanup_errors.append(
+                        "firewall cleanup failed: " + "; ".join(str(err) for err in errors)
+                    )
+            except Exception as e:
+                cleanup_errors.append(f"firewall cleanup failed: {e}")
+
             # Release ports
             self.port_manager.release_instance_ports(instance_id)
 
@@ -1500,6 +1531,13 @@ class DockerManager:
         except Exception as e:
             print(f"[Docker] Startup resource cleanup failed: {e}")
 
+        try:
+            firewall_cleanup = await self.firewall.cleanup_stale_rules(active_project_names)
+            if firewall_cleanup["stale_instances"] > 0:
+                print(f"[Firewall] Removed stale rate-limit rules: {firewall_cleanup}")
+        except Exception as e:
+            print(f"[Firewall] Startup rule cleanup failed: {e}")
+
         return summary
 
     async def start_cleanup_task(self) -> None:
@@ -1523,6 +1561,12 @@ class DockerManager:
                             print(f"[Docker] Cleaned up orphaned resources: {cleaned}")
                     except Exception as e:
                         print(f"[Docker] Resource cleanup failed: {e}")
+                    try:
+                        firewall_cleanup = await self.firewall.cleanup_stale_rules(active_project_names)
+                        if firewall_cleanup["stale_instances"] > 0 or firewall_cleanup["failed_rules"] > 0:
+                            print(f"[Firewall] Periodic rule cleanup: {firewall_cleanup}")
+                    except Exception as e:
+                        print(f"[Firewall] Periodic rule cleanup failed: {e}")
                     try:
                         pcap_manager = get_pcap_manager()
                         compressed = await pcap_manager.compress_rotated_pcaps()
