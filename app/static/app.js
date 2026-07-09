@@ -10,6 +10,18 @@ let timerIntervals = {};
 let authToken = null;
 let authMode = 'none';
 
+// Inline icon set (stroke-based, currentColor) - replaces emoji glyphs
+const ICONS = {
+    play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 5.5v13l11-6.5z" stroke-linejoin="round"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    spinner: '<svg class="icon-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3.5a8.5 8.5 0 1 0 8.5 8.5" stroke-linecap="round"/></svg>',
+    warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4.5 21 19H3z" stroke-linejoin="round"/><path d="M12 10v4" stroke-linecap="round"/><circle cx="12" cy="16.5" r="0.75" fill="currentColor" stroke="none"/></svg>',
+    box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8 12 4l8.5 4-8.5 4-8.5-4Z" stroke-linejoin="round"/><path d="M3.5 8v8l8.5 4 8.5-4V8" stroke-linejoin="round"/><path d="M12 12v8" /></svg>',
+    grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg>',
+    alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6" stroke-linecap="round"/></svg>',
+};
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     init();
@@ -279,7 +291,7 @@ async function loadChallenges() {
         if (challenges.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
-                    <span class="empty-icon">🎯</span>
+                    <span class="empty-icon">${ICONS.grid}</span>
                     <p>No challenges available</p>
                 </div>
             `;
@@ -294,20 +306,20 @@ async function loadChallenges() {
                 </div>
                 <p class="challenge-description">${escapeHtml(challenge.description || 'No description')}</p>
                 <div class="challenge-meta">
-                    <span>🔌 ${challenge.ports.length} port${challenge.ports.length !== 1 ? 's' : ''}</span>
+                    <span>${challenge.ports.length} port${challenge.ports.length !== 1 ? 's' : ''}</span>
                 </div>
                 <div class="challenge-actions">
                     <button class="btn btn-primary" onclick="spawnInstance(${jsArg(challenge.id)}, this)">
-                        <span class="btn-icon">🚀</span> Spawn
+                        <span class="btn-icon">${ICONS.play}</span> Spawn
                     </button>
                 </div>
             </div>
         `).join('');
-        
+
     } catch (error) {
         container.innerHTML = `
             <div class="empty-state">
-                <span class="empty-icon">❌</span>
+                <span class="empty-icon">${ICONS.alert}</span>
                 <p>Failed to load challenges</p>
                 <button class="btn btn-secondary" onclick="loadChallenges()">Retry</button>
             </div>
@@ -336,7 +348,7 @@ async function loadInstances() {
             
             container.innerHTML = `
                 <div class="empty-state">
-                    <span class="empty-icon">📦</span>
+                    <span class="empty-icon">${ICONS.box}</span>
                     <p>No active instances</p>
                     <p class="empty-hint">Spawn a challenge above to get started!</p>
                 </div>
@@ -370,7 +382,7 @@ async function loadInstances() {
             // Show error message if present
             const errorHtml = instance.error_message ? `
                 <div class="instance-error">
-                    <span class="error-icon">⚠️</span>
+                    <span class="error-icon">${ICONS.warning}</span>
                     <span class="error-msg">${escapeHtml(instance.error_message)}</span>
                 </div>
             ` : '';
@@ -405,10 +417,10 @@ async function loadInstances() {
                     </div>
                     <div class="instance-actions">
                         <button class="btn btn-warning btn-sm" onclick="extendInstance(${jsArg(instance.instance_id)})" title="Extend 30 min">
-                            <span class="btn-icon">⏰</span> Extend
+                            <span class="btn-icon">${ICONS.clock}</span> Extend
                         </button>
                         <button class="btn btn-danger btn-sm" onclick="stopInstance(${jsArg(instance.instance_id)})">
-                            <span class="btn-icon">🛑</span> Stop
+                            <span class="btn-icon">${ICONS.stop}</span> Stop
                         </button>
                     </div>
                 </div>
@@ -432,7 +444,7 @@ async function spawnInstance(challengeId, buttonEl = null) {
 
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="btn-icon">⏳</span> Spawning...';
+        btn.innerHTML = `<span class="btn-icon">${ICONS.spinner}</span> Spawning...`;
     }
     
     try {
@@ -463,7 +475,7 @@ async function spawnInstance(challengeId, buttonEl = null) {
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = originalHtml || '<span class="btn-icon">🚀</span> Spawn';
+            btn.innerHTML = originalHtml || `<span class="btn-icon">${ICONS.play}</span> Spawn`;
         }
     }
 }
@@ -560,13 +572,13 @@ function showToast(message, type = 'info') {
     toast.className = `toast ${type}`;
     
     const icons = {
-        success: '✅',
-        error: '❌',
-        info: 'ℹ️'
+        success: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M6.5 10.2l2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        error: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" stroke-linecap="round"/></svg>',
+        info: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M10 9v4.5" stroke-linecap="round"/><circle cx="10" cy="6.5" r="0.75" fill="currentColor" stroke="none"/></svg>'
     };
-    
+
     toast.innerHTML = `
-        <span>${icons[type] || icons.info}</span>
+        <span class="toast-icon">${icons[type] || icons.info}</span>
         <span>${escapeHtml(message)}</span>
     `;
     

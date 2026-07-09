@@ -1,13 +1,33 @@
 """Configuration settings for the instancer."""
+import logging
 import os
 import socket
 import httpx
 from typing import Optional
 from pydantic_settings import BaseSettings
 
+logger = logging.getLogger("whaley.config")
 
-def get_public_ip() -> str:
-    """Try to detect public IP address."""
+# Cache the resolved public IP for the lifetime of the process so we don't
+# make outbound HTTP calls to external IP-detection services on every spawn.
+_public_ip_cache: Optional[str] = None
+# True once detection has fallen all the way through to "localhost" — used to
+# surface a loud, one-time startup warning instead of failing silently.
+public_ip_fallback_triggered: bool = False
+
+
+def get_public_ip(force_refresh: bool = False) -> str:
+    """Try to detect public IP address.
+
+    Result is cached after the first attempt so repeated calls (e.g. once
+    per instance spawn) don't re-hit external services. Pass
+    force_refresh=True to bypass the cache.
+    """
+    global _public_ip_cache, public_ip_fallback_triggered
+
+    if not force_refresh and _public_ip_cache is not None:
+        return _public_ip_cache
+
     # Try external services first
     ip_services = [
         "https://api.ipify.org",
@@ -15,28 +35,41 @@ def get_public_ip() -> str:
         "https://icanhazip.com",
         "https://ipecho.net/plain",
     ]
-    
+
     for service in ip_services:
         try:
             response = httpx.get(service, timeout=3.0)
             if response.status_code == 200:
                 ip = response.text.strip()
                 if ip:
+                    _public_ip_cache = ip
+                    public_ip_fallback_triggered = False
                     return ip
         except Exception:
             continue
-    
+
     # Fallback: try to get local IP
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
+        _public_ip_cache = ip
+        public_ip_fallback_triggered = False
         return ip
     except Exception:
         pass
-    
-    # Final fallback
+
+    # Final fallback — this degrades participant-facing instance URLs silently
+    # unless we make noise about it here.
+    logger.warning(
+        "Public IP auto-detection failed (all external IP services and local "
+        "socket probing failed) -- falling back to 'localhost'. Participant-facing "
+        "instance URLs will be broken until you set PUBLIC_HOST explicitly "
+        "(.env or Admin Settings)."
+    )
+    public_ip_fallback_triggered = True
+    _public_ip_cache = "localhost"
     return "localhost"
 
 
@@ -84,6 +117,14 @@ class Settings(BaseSettings):
     
     # Rate limiting for admin endpoints (requests per minute)
     ADMIN_RATE_LIMIT: int = 150  # Max requests per minute per IP
+
+    # Rate limiting for participant spawn/stop/extend endpoints.
+    # The per-user limit (USER_RATE_LIMIT in main.py) is the primary control;
+    # this is a second, per-IP line of defense so a single IP can't bypass it
+    # by rotating across many CTFd accounts (or hammer a "none"-auth deployment
+    # where user_id is otherwise unconstrained). Deliberately higher than the
+    # per-user limit so it doesn't punish a NAT'd team sharing one egress IP.
+    PARTICIPANT_IP_RATE_LIMIT: int = 30  # Max spawn/stop/extend requests per minute per IP
     
     # Instance Forensics settings (Docker log capture)
     # Auto Capture: automatically dump logs when instance terminates
@@ -154,6 +195,14 @@ class Settings(BaseSettings):
         if self.PUBLIC_HOST and self.PUBLIC_HOST.lower() not in ("auto", ""):
             return self.PUBLIC_HOST
         return get_public_ip()
+
+    def public_host_fell_back_to_localhost(self) -> bool:
+        """True if PUBLIC_HOST=auto detection exhausted every method and is
+        currently serving 'localhost' as the resolved public host."""
+        if self.PUBLIC_HOST and self.PUBLIC_HOST.lower() not in ("auto", ""):
+            return False
+        get_public_ip()  # ensure detection has been attempted at least once
+        return public_ip_fallback_triggered
     
     class Config:
         env_file = ".env"

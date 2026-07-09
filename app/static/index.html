@@ -19,8 +19,10 @@
         <!-- Header -->
         <header class="header">
             <div class="logo">
-                <span class="logo-icon">🐳</span>
-                <h1>Whaley - Instance Manager</h1>
+                <span class="logo-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="6.5" width="13" height="9" rx="1.5"/><path d="M16.5 9.5h2.2c1.3 0 2.3 1 2.3 2.3v1.4c0 1.3-1 2.3-2.3 2.3h-2.2" /><circle cx="7" cy="18" r="1.3"/><circle cx="13" cy="18" r="1.3"/></svg>
+                </span>
+                <h1>Whaley Instance Manager</h1>
             </div>
             <div class="status-bar">
                 <a href="/admin" class="status-item hidden" id="admin-panel-link">Admin Panel</a>
@@ -34,7 +36,7 @@
         <!-- Auth Section (shown when not authenticated) -->
         <section class="card auth-card" id="auth-section">
             <div class="card-header">
-                <h2>🔐 Authentication Required</h2>
+                <h2>Authentication Required</h2>
             </div>
             <div class="card-body">
                 <p class="auth-description">Enter your CTFd access token to continue. You can get your token from CTFd →
@@ -46,7 +48,7 @@
                             onkeypress="if(event.key==='Enter')authenticate()">
                     </div>
                     <button class="btn btn-primary" onclick="authenticate()">
-                        <span class="btn-icon">🔑</span> Login
+                        Login
                     </button>
                 </div>
                 <p class="auth-hint">
@@ -61,9 +63,9 @@
             <!-- User Info Card -->
             <section class="card user-card">
                 <div class="card-header">
-                    <h2>👤 Your Session</h2>
+                    <h2>Your Session</h2>
                     <button class="btn btn-danger btn-sm" onclick="logout()">
-                        <span class="btn-icon">🚪</span> Logout
+                        Logout
                     </button>
                 </div>
                 <div class="card-body">
@@ -96,9 +98,9 @@
             <!-- Challenges Section -->
             <section class="card">
                 <div class="card-header">
-                    <h2>🎯 Available Challenges</h2>
+                    <h2>Available Challenges</h2>
                     <button class="btn btn-secondary btn-sm" onclick="loadChallenges()">
-                        <span class="btn-icon">🔄</span> Refresh
+                        <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" stroke-linecap="round"/><path d="M19.5 4.5v4.2h-4.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Refresh
                     </button>
                 </div>
                 <div class="card-body">
@@ -111,15 +113,15 @@
             <!-- Active Instances Section -->
             <section class="card">
                 <div class="card-header">
-                    <h2>🚀 Your Instances</h2>
+                    <h2>Your Instances</h2>
                     <button class="btn btn-secondary btn-sm" onclick="loadInstances()">
-                        <span class="btn-icon">🔄</span> Refresh
+                        <span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" stroke-linecap="round"/><path d="M19.5 4.5v4.2h-4.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Refresh
                     </button>
                 </div>
                 <div class="card-body">
                     <div id="instances-list" class="instances-list">
                         <div class="empty-state">
-                            <span class="empty-icon">📦</span>
+                            <span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8 12 4l8.5 4-8.5 4-8.5-4Z" stroke-linejoin="round"/><path d="M3.5 8v8l8.5 4 8.5-4V8" stroke-linejoin="round"/><path d="M12 12v8"/></svg></span>
                             <p>No active instances</p>
                             <p class="empty-hint">Spawn a challenge above to get started!</p>
                         </div>
@@ -130,8 +132,8 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>🐳 Whaley Instance Manager</p>
-            <p class="footer-credit">Made with 🤖 by <a href="https://github.com/jonscafe/whaley" target="_blank"
+            <p>Whaley Instance Manager</p>
+            <p class="footer-credit">Built by <a href="https://github.com/jonscafe/whaley" target="_blank"
                     rel="noopener">keii</a></p>
         </footer>
     </div>

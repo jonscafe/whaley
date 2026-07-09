@@ -6,7 +6,6 @@ Provides real-time CPU and memory metrics for:
 - Total system overhead
 - Resource usage trends
 """
-import asyncio
 import os
 import shutil
 from dataclasses import dataclass
@@ -15,6 +14,7 @@ from datetime import datetime, timezone
 
 from .config import settings
 from .docker_client import get_docker_client
+from .subprocess_utils import run_subprocess
 
 
 def utcnow() -> datetime:
@@ -328,13 +328,8 @@ class MonitoringManager:
         """Get host system information (CPU cores, memory)."""
         try:
             # Get CPU cores
-            cpu_result = await asyncio.create_subprocess_exec(
-                "nproc",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            cpu_stdout, _ = await asyncio.wait_for(cpu_result.communicate(), timeout=5)
-            cpu_cores = int(cpu_stdout.decode().strip()) if cpu_stdout else 1
+            cpu_result = await run_subprocess(["nproc"], timeout=5)
+            cpu_cores = int(cpu_result.stdout.strip()) if cpu_result.stdout.strip() else 1
             
             # Get memory info from /proc/meminfo (Linux)
             try:

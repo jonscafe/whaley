@@ -1,9 +1,7 @@
 """Host firewall rate limiting for published challenge ports."""
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -14,6 +12,7 @@ from .config import settings
 from .database.connection import get_async_session
 from .database.models import FirewallRuleState
 from .distributed_lock import get_lock_manager
+from .subprocess_utils import safe_arg_fragment, run_subprocess
 
 
 def utcnow() -> datetime:
@@ -22,8 +21,9 @@ def utcnow() -> datetime:
 
 
 def _safe_fragment(value: str, max_length: int = 32) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(value)).strip("-_")
-    return (cleaned or "item")[:max_length]
+    """Kept as a thin wrapper for call-site compatibility; sanitization
+    itself now lives in subprocess_utils.safe_arg_fragment."""
+    return safe_arg_fragment(value, max_length=max_length)
 
 
 class FirewallManager:
@@ -50,24 +50,8 @@ class FirewallManager:
 
     async def _run_command(self, args: Sequence[str], timeout: float = 15.0) -> Tuple[bool, str]:
         full_cmd = [*self._command_prefix(), *args]
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *full_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except FileNotFoundError as exc:
-            return False, str(exc)
-
-        try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
-            process.kill()
-            await process.communicate()
-            return False, f"command timed out: {' '.join(full_cmd)}"
-
-        message = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()
-        return process.returncode == 0, message
+        result = await run_subprocess(full_cmd, timeout=timeout)
+        return result.ok, result.message
 
     async def _probe_backend(self) -> Tuple[bool, str]:
         if self._backend_probe is not None:

@@ -44,10 +44,16 @@ class EventLog(Base):
     message = Column(Text, nullable=False)
     details_json = Column(Text, nullable=True)  # JSON serialized details
     ip_address = Column(String(45), nullable=True)  # IPv6 max length
-    
+    # First-class column (not buried in details_json) so per-team known-IP
+    # lookups (IP correlation) can use a plain indexed WHERE instead of
+    # scanning + JSON-decoding every row with an ip_address, which doesn't
+    # scale on a long-running event with many players.
+    team_id = Column(String(64), nullable=True, index=True)
+
     __table_args__ = (
         Index('ix_event_user_type', 'user_id', 'event_type'),
         Index('ix_event_timestamp_type', 'timestamp', 'event_type'),
+        Index('ix_event_team_type', 'team_id', 'event_type'),
     )
     
     def __repr__(self):

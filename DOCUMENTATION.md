@@ -13,6 +13,7 @@ Complete documentation for the CTF Docker Instancer.
 - [Admin Dashboard](#-admin-dashboard)
 - [Dynamic Flags](#dynamic-flags)
 - [Challenge Manager](#-challenge-manager)
+- [Public Challenge Links](#public-challenge-links)
 - [Development](#-development)
 - [Production Infrastructure](#-production-infrastructure)
 - [Capacity Planning](#-capacity-planning--server-requirements)
@@ -29,7 +30,7 @@ Complete documentation for the CTF Docker Instancer.
 
 - Docker & Docker Compose v2
 - Python 3.11+ (for local development)
-- A VPS with open port range (default: 20000-50000)
+- A VPS with open port range (default: 30000-40000, configurable via `PORT_RANGE_START`/`PORT_RANGE_END`)
 
 ---
 
@@ -62,8 +63,8 @@ CTFD_API_KEY=ctfd_admin_token_for_flags_and_sync
 PUBLIC_HOST=auto
 
 # Port range for instances
-PORT_RANGE_START=20000
-PORT_RANGE_END=50000
+PORT_RANGE_START=30000
+PORT_RANGE_END=40000
 
 # Local admin dashboard key for AUTH_MODE=none (generate with: openssl rand -hex 32)
 ADMIN_KEY=your-secure-admin-key
@@ -101,11 +102,11 @@ python -m uvicorn app.main:app --reload
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTH_MODE` | `none` | Authentication mode: `ctfd` or `none` |
+| `AUTH_MODE` | `ctfd` | Authentication mode: `ctfd` or `none` |
 | `CTFD_URL` | - | CTFd platform URL (required for ctfd mode) |
-| `PUBLIC_HOST` | `localhost` | Public hostname/IP for instances. Use `auto` for auto-detection |
-| `PORT_RANGE_START` | `20000` | Start of port range for instances |
-| `PORT_RANGE_END` | `50000` | End of port range for instances |
+| `PUBLIC_HOST` | `auto` | Public hostname/IP for instances. Use `auto` for auto-detection |
+| `PORT_RANGE_START` | `30000` | Start of port range for instances |
+| `PORT_RANGE_END` | `40000` | End of port range for instances |
 | `INSTANCE_TIMEOUT` | `3600` | Default instance lifetime in seconds |
 | `CHALLENGES_DIR` | `./challenges` | Directory containing challenge definitions |
 | `ADMIN_KEY` | - | Local admin dashboard key used when `AUTH_MODE=none` |
@@ -132,6 +133,7 @@ python -m uvicorn app.main:app --reload
 | `LOG_FILE` | `logs/events.jsonl` | Path to event log file |
 | `DEBUG` | `false` | Enable debug mode |
 | `ADMIN_RATE_LIMIT` | `150` | Admin API requests allowed per minute per client IP |
+| `PARTICIPANT_IP_RATE_LIMIT` | `30` | Spawn/stop/extend requests allowed per minute per client IP. Second line of defense: catches a single IP cycling through many CTFd accounts or hammering a no-auth deployment. The primary per-user cap (10 req/min, fixed in code) fires first; this fires regardless of user identity. |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1` | Comma-separated proxy IPs/CIDRs allowed to supply `X-Forwarded-For`/`X-Real-IP` |
 
 ### VPS Firewall Setup
@@ -140,8 +142,8 @@ python -m uvicorn app.main:app --reload
 # Allow instancer API
 sudo ufw allow 8000/tcp
 
-# Allow instance port range
-sudo ufw allow 20000:50000/tcp
+# Allow instance port range (adjust to match PORT_RANGE_START/END)
+sudo ufw allow 30000:40000/tcp
 ```
 
 ---
@@ -255,7 +257,8 @@ Whaley also validates compose files before startup and rejects options that woul
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/challenges` | GET | List available challenges |
-| `/challenges/{id}` | GET | Get challenge details |
+| `/challenges/{id}` | GET | Get challenge details (requires auth) |
+| `/instance/{id}` | GET | Standalone public page for one challenge (404 if the challenge doesn't exist); see [Public Challenge Links](#public-challenge-links) |
 
 ### Instances
 
@@ -342,6 +345,7 @@ All admin endpoints are also rate-limited by client IP using `ADMIN_RATE_LIMIT`.
 | `/admin/api/flags/suspicious` | DELETE | Clear suspicious submissions list |
 | `/admin/api/flags/sync-challenge` | POST | Map local challenge to CTFd challenge ID |
 | `/admin/api/flags/mapping/{id}` | DELETE | Remove a challenge mapping |
+| `/admin/api/flags/mapping/{id}/sync-connection-info` | POST | Push the local challenge's public `/instance/{id}` link into the mapped CTFd challenge's `connection_info` field ("Sync Public Link to CTFd" button) |
 | `/admin/api/flags/user/{user_id}` | DELETE | Delete all flags for a user |
 | `/admin/api/flags/{flag_id}` | DELETE | Delete a specific flag mapping |
 | `/admin/api/ctfd/challenges` | GET | Fetch CTFd challenges with mapping suggestions |
@@ -587,7 +591,9 @@ Authentication follows the admin API rules:
 - In CTFd mode, enter a CTFd access token from an admin user.
 - In no-auth mode, enter the local `ADMIN_KEY` configured for Whaley.
 
-The admin dashboard has these tabs:
+The dashboard uses a GZCTF/CTFd-style **left sidebar** (~240px) for navigation, with the content area filling the remaining width (no more top tab bar). The sidebar collapses to icon-only around 1024px viewport width, and becomes an off-canvas drawer toggled by a hamburger button below 700px.
+
+The admin dashboard has these sections (sidebar items):
 
 ### 1. Dashboard
 - 📈 **Statistics** - Total spawns, active instances, unique users, and instance status counts
@@ -605,11 +611,13 @@ The admin dashboard has these tabs:
 - ⚠️ **Suspicious Submissions** - List of users who submitted other users' flags
 - 🔐 **Flag Mappings** - View all user-flag assignments
 - 🗺️ **Challenge ID Mapping** - Map local challenges to CTFd challenge IDs
+- 🔗 **Sync Public Link to CTFd** - For a mapped challenge, push its `/instance/{id}` public link into the CTFd challenge's `connection_info` field with one click (see [Public Challenge Links](#public-challenge-links))
 
 ### 4. Challenge Manager
 - 📤 **Upload Challenges** - Upload .zip files containing challenges
 - 📁 **File Browser** - Browse and edit challenge files
 - 🔄 **Reload Config** - Apply changes to challenge.yaml
+- 🔗 **Copy Link** - Copy the challenge's public `/instance/{id}` link to the clipboard directly from its card (see [Public Challenge Links](#public-challenge-links))
 
 ### 5. Packet Capture
 - 📡 **Capture Status** - Toggle packet capture for future spawns and track storage usage
@@ -678,6 +686,19 @@ The admin dashboard includes a **Challenge Manager** that allows you to upload a
 - Binary files are marked as non-editable; writes are limited to text files up to 2 MB
 - Challenge IDs may come from `challenge.yaml` and can differ from folder names; the manager resolves both safely
 - Challenge deletion is blocked while active instances are still using the challenge
+
+### Public Challenge Links
+
+Every challenge has a standalone public page at `/instance/{challenge_id}` (served by `app/static/instance.html` via the `GET /instance/{challenge_id}` route in `app/main.py`). The page shows just that challenge's name, category, and description plus a **Spawn** button — useful for sharing a direct link to a single challenge instead of the full catalog.
+
+- The route 404s if `challenge_id` doesn't exist (checked server-side via `docker_manager.get_challenge`).
+- The page itself is unauthenticated to load, but fetches challenge data from the existing authenticated `/challenges/{challenge_id}` endpoint; on a `401` it shows the same CTFd-token login prompt used on the main `index.html`, and once authenticated, renders the challenge and wires the Spawn button to the existing `/instances/spawn` endpoint.
+- No new unauthenticated data-exposing endpoint was added — auth enforcement is unchanged.
+
+Two admin-facing shortcuts make these links easy to distribute:
+
+- **Challenge Manager → Copy Link** - copies `{origin}/instance/{id}` to the clipboard for any challenge, using `navigator.clipboard.writeText` with a `document.execCommand('copy')` fallback for non-HTTPS contexts.
+- **Dynamic Flags → Challenge ID Mapping → Sync Public Link to CTFd** - for a challenge that's mapped to a CTFd challenge ID, calls `POST /admin/api/flags/mapping/{id}/sync-connection-info`, which PATCHes the CTFd challenge's `connection_info` field with the same public link, so players see it directly on the CTFd challenge page.
 - Runtime spawns also reject challenge source trees that contain symlinks
 
 ---
@@ -704,35 +725,102 @@ DEBUG=true python -m uvicorn app.main:app --reload
 whaley/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py              # FastAPI application
-│   ├── config.py            # Settings & configuration
-│   ├── models.py            # Pydantic models
-│   ├── auth.py              # Authentication handlers
-│   ├── docker_manager.py    # Docker/compose management
-│   ├── docker_client.py     # Docker SDK wrapper
-│   ├── port_manager.py      # Port allocation
-│   ├── flag_manager.py      # Dynamic flags and suspicious submissions
-│   ├── forensics.py         # Instance log capture
-│   ├── monitoring.py        # Container/system metrics
-│   ├── logger.py            # Event logging
-│   ├── distributed_lock.py  # Redis-based distributed locking
-│   ├── database/            # Database layer
+│   ├── main.py               # FastAPI app bootstrap: lifespan, middleware,
+│   │                         # background tasks, router includes, and a
+│   │                         # handful of small public routes (/, /api,
+│   │                         # /health, /config)
+│   ├── deps.py               # Shared singletons (port_manager, docker_manager),
+│   │                         # rate-limit helpers, verify_admin_key /
+│   │                         # verify_metrics_secret, settings load/persist
+│   │                         # helpers, and other cross-router dependencies
+│   ├── routers/              # Domain-split FastAPI APIRouter modules
 │   │   ├── __init__.py
-│   │   ├── models.py        # SQLAlchemy ORM models
-│   │   └── connection.py    # Async database connection
-│   └── static/              # Web UI files
-│       ├── index.html       # User interface
-│       ├── admin.html       # Admin dashboard
+│   │   ├── instances.py      # Public player-facing routes: /challenges,
+│   │   │                     # /instances/*, /me, /me/team
+│   │   ├── admin.py          # Admin dashboard, stats, event/visit logs,
+│   │   │                     # admin instance management, user-ports,
+│   │   │                     # dynamic-flags admin API, CTFd sync, settings
+│   │   ├── challenges.py     # /admin/api/challenges/* (upload, file browser,
+│   │   │                     # reload, toggle, resource limits)
+│   │   └── monitoring.py     # /metrics (Prometheus), forensics, packet
+│   │                         # capture, system/instance monitoring, firewall
+│   ├── config.py             # Settings & configuration
+│   ├── models.py             # Pydantic models
+│   ├── auth.py               # Authentication handlers
+│   ├── docker_manager.py     # Docker/compose management
+│   ├── docker_client.py      # Docker SDK wrapper
+│   ├── port_manager.py       # Port allocation
+│   ├── flag_manager.py       # Dynamic flags and suspicious submissions
+│   ├── forensics.py          # Instance log capture
+│   ├── monitoring.py         # Container/system metrics
+│   ├── logger.py             # Event logging
+│   ├── distributed_lock.py   # Redis-based distributed locking
+│   ├── database/             # Database layer
+│   │   ├── __init__.py
+│   │   ├── models.py         # SQLAlchemy ORM models
+│   │   └── connection.py     # Async database connection
+│   └── static/                # Web UI files
+│       ├── index.html        # User interface
+│       ├── admin.html        # Admin dashboard (left sidebar layout)
+│       ├── instance.html     # Standalone public per-challenge page (/instance/{id})
 │       ├── style.css
 │       └── app.js
-├── challenges/              # Challenge definitions
-├── data/                    # SQLite database (auto-created)
-├── logs/                    # Event logs
-├── docker-compose.yaml      # Instancer deployment
+├── tests/                    # Pytest suite (see Testing section below)
+│   ├── conftest.py
+│   ├── test_port_manager.py
+│   ├── test_distributed_lock.py
+│   └── test_compose_hardening.py
+├── .github/
+│   └── workflows/
+│       └── ci.yml            # Runs pytest on every push/PR
+├── challenges/                # Challenge definitions
+├── data/                      # SQLite database (auto-created)
+├── logs/                      # Event logs
+├── docker-compose.yaml        # Instancer deployment
 ├── Dockerfile
 ├── requirements.txt
+├── pytest.ini
 └── README.md
 ```
+
+### Application Logs
+
+Whaley writes operational messages — startup, shutdown, background task activity, and settings load/persist — through Python's standard `logging` module. The logger hierarchy is:
+
+| Logger | Source module | Contents |
+|--------|--------------|---------|
+| `whaley.main` | `app/main.py` | Startup/shutdown steps, background task heartbeats (submission checker, IP-correlation sweep) |
+| `whaley.deps` | `app/deps.py` | DB settings load/persist results, runtime setting apply warnings |
+| `whaley.config` | `app/config.py` | Public-IP auto-detection warnings |
+
+Under uvicorn the root logger is configured at `INFO` by default, so these messages appear in the same stream as uvicorn's access log. Under gunicorn, set the log level explicitly:
+
+```bash
+gunicorn -w 4 -k uvicorn.workers.UvicornWorker \
+  --log-level info \
+  app.main:app
+```
+
+To route Whaley logs separately from the web framework's access log, configure a `logging.config.dictConfig` in your container entrypoint before the app starts, using `whaley` as the parent logger name.
+
+---
+
+### Testing
+
+Whaley ships a pytest suite under `tests/` that targets the concurrency-sensitive paths most likely to break under real event load, plus the docker-compose hardening validator that protects against isolation-breaking challenge configs.
+
+```bash
+pip install -r requirements.txt
+pytest tests/ -v
+```
+
+| File | Coverage |
+|------|----------|
+| `tests/test_port_manager.py` | Port allocation/release edge cases, pool exhaustion, and `asyncio.gather`-based concurrent allocation races to confirm no two coroutines are ever handed the same port |
+| `tests/test_distributed_lock.py` | Local-lock serialization/parallelism, `blocking_timeout` behavior, release-on-exception, `acquire_multiple`'s sort-order deadlock avoidance, and a spawn/stop lifecycle-lock race mirroring `docker_manager`'s per-instance locking pattern |
+| `tests/test_compose_hardening.py` | Parametrized bad docker-compose snippets (privileged, cap_add, host network/pid/ipc/userns/uts, disallowed `security_opt`, Docker-socket/root/home bind mounts, path traversal, external networks/volumes/secrets, non-local volume drivers, etc.) confirming each is rejected, plus a known-good minimal compose confirming it passes |
+
+Tests run entirely against the local (no-Redis) lock-manager path and use a faked socket layer for port probing, so the suite needs neither a live Docker daemon nor Redis and is safe to run in CI. `.github/workflows/ci.yml` runs the full suite on every push and pull request using Python 3.11.
 
 ### Creating New Challenges
 
@@ -892,6 +980,7 @@ services:
 | `NETWORK_SUBNET_BASE` | `10.240.0.0/16` | Whaley-managed address pool for per-instance isolation networks and compose-created challenge networks |
 | `NETWORK_SUBNET_PREFIX` | `28` | Prefix length allocated from `NETWORK_SUBNET_BASE` for each Docker bridge network |
 | `ADMIN_RATE_LIMIT` | `150` | Admin API requests allowed per minute per client IP |
+| `PARTICIPANT_IP_RATE_LIMIT` | `30` | Spawn/stop/extend requests allowed per minute per client IP. Second line of defense: catches a single IP cycling through many CTFd accounts or hammering a no-auth deployment. The primary per-user cap (10 req/min, fixed in code) fires first; this fires regardless of user identity. |
 | `TRUSTED_PROXIES` | `127.0.0.1,::1` | Trusted reverse proxies for forwarded client IP headers |
 | `METRICS_SECRET` | - | Secret required for Prometheus `/metrics`; empty disables endpoint |
 | `FIREWALL_RATE_LIMIT_ENABLED` | `false` | Enable host-level per-instance connlimit/hashlimit rules |
@@ -2203,7 +2292,7 @@ Then configure Prometheus to scrape Whaley, cAdvisor, and Node Exporter for long
 5. **Compose Hardening** - Challenge compose files cannot use privileged mode, host/container namespaces, custom `network_mode`, added capabilities/devices, unsafe security options, Docker socket mounts, external networks/volumes, unsafe build or env-file paths, or bind mounts outside the challenge directory. `security_opt: ["no-new-privileges:true"]` is allowed.
 6. **Trusted Proxies** - Configure `TRUSTED_PROXIES` when using no-auth mode behind a reverse proxy so client identity cannot be spoofed with forwarded headers
 7. **Timeouts** - Set reasonable instance timeouts
-8. **Rate Limiting** - Admin APIs have built-in per-IP limits; add edge rate limiting for public endpoints in high-traffic events
+8. **Rate Limiting** - Spawn/stop/extend endpoints enforce two independent limits: a fixed 10 req/min per authenticated user, and a configurable `PARTICIPANT_IP_RATE_LIMIT` per source IP. Admin endpoints enforce a separate `ADMIN_RATE_LIMIT` per IP. Rate-limit state is kept in memory and purged every 5 minutes so it does not grow unboundedly during long events. For additional protection on public-facing deployments, add edge-level rate limiting in front of Whaley.
 9. **Metrics Secret** - Set a strong `METRICS_SECRET` before exposing `/metrics`; leave it empty to disable the endpoint
 10. **Lifecycle Cleanup** - Keep Docker labels intact; they allow Whaley to identify and clean stale per-instance resources safely
 

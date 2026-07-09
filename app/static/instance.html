@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whaley - Challenge Instance</title>
+    <link rel="icon" type="image/png" href="/static/icon.png">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="container" style="max-width: 640px;">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="6.5" width="13" height="9" rx="1.5"/><path d="M16.5 9.5h2.2c1.3 0 2.3 1 2.3 2.3v1.4c0 1.3-1 2.3-2.3 2.3h-2.2" /><circle cx="7" cy="18" r="1.3"/><circle cx="13" cy="18" r="1.3"/></svg>
+                </span>
+                <h1>Whaley Instance</h1>
+            </div>
+            <div class="status-bar">
+                <a href="/" class="status-item">Back to Instancer</a>
+            </div>
+        </header>
+
+        <!-- Auth Section (shown when not authenticated, CTFd mode only) -->
+        <section class="card auth-card hidden" id="auth-section">
+            <div class="card-header">
+                <h2>Authentication Required</h2>
+            </div>
+            <div class="card-body">
+                <p class="auth-description">Enter your CTFd access token to continue. You can get your token from CTFd →
+                    Settings → Access Tokens.</p>
+                <div class="auth-form">
+                    <div class="input-group">
+                        <label for="ctfd-token">CTFd Access Token</label>
+                        <input type="password" id="ctfd-token" placeholder="ctfd_xxxxxxxxxxxx..." autocomplete="off"
+                            onkeypress="if(event.key==='Enter')authenticate()">
+                    </div>
+                    <button class="btn btn-primary" onclick="authenticate()">
+                        Login
+                    </button>
+                </div>
+                <p class="auth-hint">
+                    <a href="https://ctf.korpstar-poltekssn.org/settings#tokens" target="_blank" rel="noopener">Get your
+                        access token here →</a>
+                </p>
+            </div>
+        </section>
+
+        <!-- Loading state -->
+        <section class="card hidden" id="loading-section">
+            <div class="card-body">
+                <div class="loading">Loading challenge...</div>
+            </div>
+        </section>
+
+        <!-- Error state (challenge not found, etc.) -->
+        <section class="card hidden" id="error-section">
+            <div class="card-body">
+                <div class="empty-state">
+                    <span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6" stroke-linecap="round"/></svg></span>
+                    <p id="error-message">Challenge not found</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content (single challenge card, shown when authenticated + loaded) -->
+        <main class="main-content hidden" id="main-content">
+            <section class="card">
+                <div class="card-header">
+                    <h2 id="challenge-name">-</h2>
+                    <span class="challenge-category" id="challenge-category">-</span>
+                </div>
+                <div class="card-body">
+                    <p class="auth-description" id="challenge-description">-</p>
+                    <div class="challenge-actions" style="margin-top: 1.25rem;">
+                        <button class="btn btn-primary" id="spawn-btn" onclick="spawnThisChallenge(this)">
+                            <span class="btn-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 5.5v13l11-6.5z" stroke-linejoin="round"/></svg>
+                            </span> Spawn
+                        </button>
+                    </div>
+                    <div id="spawn-result" style="margin-top: 1rem;"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Whaley Instance Manager</p>
+            <p class="footer-credit">Built by <a href="https://github.com/jonscafe/whaley" target="_blank"
+                    rel="noopener">keii</a></p>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <script>
+        const API_BASE = '';
+        let authToken = null;
+        let authMode = 'none';
+        let challengeId = null;
+        let challengeData = null;
+
+        function getChallengeIdFromPath() {
+            // Path is /instance/{challenge_id}
+            const parts = window.location.pathname.split('/').filter(Boolean);
+            // parts = ['instance', '<challenge_id>', ...]
+            if (parts.length >= 2 && parts[0] === 'instance') {
+                return decodeURIComponent(parts[1]);
+            }
+            return null;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+
+            const icons = {
+                success: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M6.5 10.2l2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                error: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" stroke-linecap="round"/></svg>',
+                info: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="8"/><path d="M10 9v4.5" stroke-linecap="round"/><circle cx="10" cy="6.5" r="0.75" fill="currentColor" stroke="none"/></svg>'
+            };
+
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type] || icons.info}</span>
+                <span>${escapeHtml(message)}</span>
+            `;
+
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function showSection(id) {
+            ['auth-section', 'loading-section', 'error-section', 'main-content'].forEach(sectionId => {
+                document.getElementById(sectionId).classList.toggle('hidden', sectionId !== id);
+            });
+        }
+
+        async function checkAuthMode() {
+            try {
+                const data = await fetch(`${API_BASE}/api`).then(r => r.json());
+                authMode = data.auth_mode || 'none';
+            } catch (error) {
+                console.error('Failed to check auth mode:', error);
+            }
+        }
+
+        async function fetchChallenge() {
+            const headers = {};
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            const response = await fetch(`${API_BASE}/challenges/${encodeURIComponent(challengeId)}`, { headers });
+            if (response.status === 401) {
+                return { unauthorized: true };
+            }
+            if (response.status === 404) {
+                return { notFound: true };
+            }
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.detail || 'Failed to load challenge');
+            }
+            const data = await response.json();
+            return { challenge: data };
+        }
+
+        function renderChallenge(challenge) {
+            challengeData = challenge;
+            document.getElementById('challenge-name').textContent = challenge.name;
+            document.getElementById('challenge-category').textContent = challenge.category;
+            document.getElementById('challenge-category').className = `challenge-category category-${challenge.category}`;
+            document.getElementById('challenge-description').textContent = challenge.description || 'No description';
+            showSection('main-content');
+        }
+
+        async function loadChallenge() {
+            showSection('loading-section');
+            try {
+                const result = await fetchChallenge();
+                if (result.unauthorized) {
+                    showSection('auth-section');
+                    return;
+                }
+                if (result.notFound) {
+                    document.getElementById('error-message').textContent = 'Challenge not found';
+                    showSection('error-section');
+                    return;
+                }
+                renderChallenge(result.challenge);
+            } catch (error) {
+                document.getElementById('error-message').textContent = error.message || 'Failed to load challenge';
+                showSection('error-section');
+            }
+        }
+
+        async function authenticate() {
+            const tokenInput = document.getElementById('ctfd-token');
+            const token = tokenInput.value.trim();
+
+            if (!token) {
+                showToast('Please enter your CTFd access token', 'error');
+                return;
+            }
+
+            authToken = token;
+            try {
+                const result = await fetchChallenge();
+                if (result.unauthorized) {
+                    authToken = null;
+                    showToast('Invalid token. Please check and try again.', 'error');
+                    return;
+                }
+                if (result.notFound) {
+                    document.getElementById('error-message').textContent = 'Challenge not found';
+                    showSection('error-section');
+                    return;
+                }
+                sessionStorage.setItem('ctfd_token', token);
+                showToast('Logged in successfully', 'success');
+                renderChallenge(result.challenge);
+            } catch (error) {
+                showToast(error.message || 'Authentication failed', 'error');
+            }
+        }
+
+        async function spawnThisChallenge(buttonEl) {
+            const btn = buttonEl instanceof HTMLElement ? buttonEl : null;
+            const originalHtml = btn ? btn.innerHTML : null;
+            const resultEl = document.getElementById('spawn-result');
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = 'Spawning...';
+            }
+            resultEl.innerHTML = '';
+
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (authToken) {
+                    headers['Authorization'] = `Bearer ${authToken}`;
+                }
+                const response = await fetch(`${API_BASE}/instances/spawn`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ challenge_id: challengeId })
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to spawn instance');
+                }
+
+                if (data.success) {
+                    const publicUrls = (data.instance && data.instance.public_urls) || {};
+                    let urlsHtml = '';
+                    if (Object.keys(publicUrls).length > 0) {
+                        urlsHtml = Object.entries(publicUrls)
+                            .map(([port, url]) => `<div><strong>${escapeHtml(String(port))}:</strong> <code>${escapeHtml(url)}</code></div>`)
+                            .join('');
+                    } else if (data.instance && data.instance.public_url) {
+                        urlsHtml = `<div><code>${escapeHtml(data.instance.public_url)}</code></div>`;
+                    }
+                    resultEl.innerHTML = `
+                        <div class="card-body" style="padding: 0;">
+                            <p style="color: var(--accent-success); margin-bottom: 0.5rem;">Instance spawned successfully!</p>
+                            ${urlsHtml}
+                        </div>
+                    `;
+                    showToast('Instance spawned successfully!', 'success');
+                } else {
+                    showToast(data.message || 'Failed to spawn instance', 'error');
+                }
+            } catch (error) {
+                showToast(error.message || 'Failed to spawn instance', 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            challengeId = getChallengeIdFromPath();
+            if (!challengeId) {
+                document.getElementById('error-message').textContent = 'No challenge specified';
+                showSection('error-section');
+                return;
+            }
+
+            authToken = sessionStorage.getItem('ctfd_token');
+            await checkAuthMode();
+            await loadChallenge();
+        });
+    </script>
+</body>
+
+</html>

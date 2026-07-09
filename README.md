@@ -37,7 +37,7 @@
 
 ### 🚀 Core Functionality
 - **Dynamic Instance Spawning** — Isolated Docker containers per user/team
-- **Automatic Port Allocation** — Smart port management (10000-60000 range)
+- **Automatic Port Allocation** — Smart port management (default range 30000-40000, configurable)
 - **Multi-Port Challenges** — Support for complex multi-service challenges
 - **Auto-Cleanup** — Instances automatically terminated after timeout
 - **Startup Orphan Cleanup** — Removes stale compose projects, networks, volumes, and per-spawn images
@@ -70,9 +70,10 @@
 - **Prometheus Metrics** — Protected `/metrics` endpoint for external scraping
 - **Instance Forensics** — Capture logs on termination or on-demand
 - **Native Packet Capture** — Per-instance tcpdump sidecar, searchable flows, payload viewer, lazy PCAP indexing, and raw PCAP download
-- **Admin Dashboard** — Web UI for monitoring and management, including manual spawn/destroy, firewall status, and paginated high-volume views
+- **Admin Dashboard** — Left-sidebar (GZCTF/CTFd-style) web UI for monitoring and management, including manual spawn/destroy, firewall status, and paginated high-volume views
 - **Per-Instance Logs & Metrics** — Inspect Docker logs and CPU/RAM/network/block I/O from the dashboard
-- **Challenge Manager** — Upload & edit challenges without SSH
+- **Challenge Manager** — Upload & edit challenges without SSH; one-click **Copy Link** to a challenge's public page
+- **Public Challenge Links** — Standalone `/instance/{id}` page per challenge, shareable on its own; admins can **Sync Public Link to CTFd** so it appears in the CTFd challenge's connection info
 - **Challenge Toggle** — Activate/deactivate challenges from admin panel
 - **Admin Settings UI** — Configure all Whaley settings via the web UI (no env/compose edits needed)
 - **Event Logging** — Comprehensive audit trail with Docker errors
@@ -112,6 +113,7 @@ docker compose up -d
 |-----------|-----|-------------|
 | **User Dashboard** | `http://your-server:8000/` | Challenge spawning interface |
 | **Admin Panel** | `http://your-server:8000/admin` | Monitoring & management |
+| **Public Challenge Link** | `http://your-server:8000/instance/{challenge_id}` | Standalone page for a single challenge |
 | **API Docs** | `http://your-server:8000/docs` | Swagger API documentation |
 | **Prometheus Metrics** | `http://your-server:8000/metrics` | Protected metrics export when `METRICS_SECRET` is set |
 
@@ -129,8 +131,8 @@ CTFD_API_KEY=ctfd_xxx...          # CTFd admin API key for dynamic flags/sync
 
 # Network
 PUBLIC_HOST=auto                  # VPS IP ("auto" for detection)
-PORT_RANGE_START=20000
-PORT_RANGE_END=50000
+PORT_RANGE_START=30000            # Default range; widen if you expect >10k concurrent ports
+PORT_RANGE_END=40000
 
 # Admin
 ADMIN_KEY=your-secure-key         # Local admin key when AUTH_MODE=none
@@ -425,6 +427,13 @@ Control which challenges are visible and spawnable from the **Challenge Manager*
 Use this during competitions to stage challenges for later rounds, or to quickly disable a broken challenge without deleting it.
 
 Challenge uploads reject path traversal, absolute paths, and symlinks. Runtime challenge trees are also rejected if they contain symlinks. The browser editor only writes text files up to 2 MB, and Whaley blocks deleting a challenge while active instances are still using it.
+
+### Public Challenge Links
+
+Each challenge has a standalone public page at `/instance/{challenge_id}` showing just that challenge's details and a Spawn button — handy for sharing a direct link instead of the full catalog. The page loads the challenge through the existing authenticated `/challenges/{challenge_id}` endpoint and prompts for a CTFd token on `401`, same as the main dashboard.
+
+- **Challenge Manager → Copy Link** — copies the public link for a challenge to your clipboard.
+- **Dynamic Flags → Challenge ID Mapping → Sync Public Link to CTFd** — for challenges mapped to a CTFd challenge ID, pushes the public link into that challenge's CTFd `connection_info` field so players see it on the CTFd challenge page itself.
 
 ### Admin Instance Operations
 

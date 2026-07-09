@@ -25,6 +25,8 @@ class EventType(str, Enum):
     FLAG_CREATED = "flag_created"
     FLAG_DELETED = "flag_deleted"
     SUSPICIOUS_SUBMISSION = "suspicious_submission"
+    INSTANCE_VISIT = "instance_visit"
+    SUSPICIOUS_INSTANCE_VISIT = "suspicious_instance_visit"
     SYSTEM_START = "system_start"
     SYSTEM_STOP = "system_stop"
 
@@ -43,6 +45,7 @@ class LogEntry(BaseModel):
     message: str
     details: Optional[Dict[str, Any]] = None
     ip_address: Optional[str] = None
+    team_id: Optional[str] = None
 
 
 class EventLogger:
@@ -92,7 +95,8 @@ class EventLogger:
                     public_url=entry.public_url,
                     message=entry.message,
                     details_json=json.dumps(entry.details) if entry.details else None,
-                    ip_address=entry.ip_address
+                    ip_address=entry.ip_address,
+                    team_id=entry.team_id,
                 )
                 session.add(db_entry)
                 await session.commit()
@@ -111,6 +115,7 @@ class EventLogger:
         public_url: Optional[str] = None,
         details: Optional[Dict[str, Any]] = None,
         ip_address: Optional[str] = None,
+        team_id: Optional[str] = None,
     ) -> LogEntry:
         """Add a new log entry (async version)."""
         self._counter += 1
@@ -126,6 +131,7 @@ class EventLogger:
             public_url=public_url,
             details=details,
             ip_address=ip_address,
+            team_id=team_id,
         )
         
         # Add to memory cache
@@ -162,12 +168,18 @@ class EventLogger:
         public_url: str,
         ip_address: Optional[str] = None,
         extra: Optional[Dict] = None,
+        team_id: Optional[str] = None,
     ) -> LogEntry:
         """Log an instance spawn event."""
         port_str = ", ".join([f"{k}→{v}" for k, v in ports.items()])
         details = {}
         if extra:
             details.update(extra)
+            # Backward-compat fallback: older callers only put team_id inside
+            # `extra` (-> details_json). Prefer the explicit param, but if it
+            # wasn't passed, still populate the indexed column from there.
+            if team_id is None:
+                team_id = extra.get("team_id")
         return await self.log(
             event_type=EventType.INSTANCE_SPAWN,
             message=f"User '{username}' spawned '{challenge_id}' → {public_url} (ports: {port_str})",
@@ -179,6 +191,7 @@ class EventLogger:
             public_url=public_url,
             ip_address=ip_address,
             details=details if details else None,
+            team_id=team_id,
         )
     
     async def log_instance_spawn_failed(
@@ -211,6 +224,7 @@ class EventLogger:
         instance_id: str,
         challenge_id: str,
         ip_address: Optional[str] = None,
+        team_id: Optional[str] = None,
     ) -> LogEntry:
         """Log an instance stop event."""
         return await self.log(
@@ -221,8 +235,9 @@ class EventLogger:
             instance_id=instance_id,
             challenge_id=challenge_id,
             ip_address=ip_address,
+            team_id=team_id,
         )
-    
+
     async def log_instance_extend(
         self,
         user_id: str,
@@ -230,6 +245,7 @@ class EventLogger:
         instance_id: str,
         extension_seconds: int,
         ip_address: Optional[str] = None,
+        team_id: Optional[str] = None,
     ) -> LogEntry:
         """Log an instance extend event."""
         return await self.log(
@@ -238,6 +254,7 @@ class EventLogger:
             user_id=user_id,
             username=username,
             instance_id=instance_id,
+            team_id=team_id,
             details={"extension_seconds": extension_seconds},
             ip_address=ip_address,
         )
@@ -335,26 +352,83 @@ class EventLogger:
             },
         )
     
+    async def log_instance_visit(
+        self,
+        instance_id: str,
+        challenge_id: str,
+        owner_id: str,
+        owner_name: str,
+        visitor_ip: str,
+        suspicious: bool,
+        team_mode: bool,
+        reason: Optional[str] = None,
+    ) -> LogEntry:
+        """Log a detected visit to an instance's exposed ports, correlated from
+        packet captures against the owner's (or owner team's) known IPs.
+
+        Mirrors the message formats requested for the admin event log:
+          - normal:     "owner visit instance 'x'"
+          - suspicious (team mode): "[sus] ip x not from team x visit instance 'x'"
+          - suspicious (user mode): "[sus] ip x not the owner of instance 'x' visited"
+        """
+        if not suspicious:
+            message = f"Owner '{owner_name}' visited instance '{instance_id}'"
+            event_type = EventType.INSTANCE_VISIT
+        elif team_mode:
+            message = f"[sus] ip {visitor_ip} not from team '{owner_name}' visited instance '{instance_id}'"
+            event_type = EventType.SUSPICIOUS_INSTANCE_VISIT
+        else:
+            message = f"[sus] ip {visitor_ip} not the owner of instance '{instance_id}' visited"
+            event_type = EventType.SUSPICIOUS_INSTANCE_VISIT
+        details: Dict[str, Any] = {"team_mode": team_mode}
+        if reason:
+            details["reason"] = reason
+        return await self.log(
+            event_type=event_type,
+            message=message,
+            user_id=owner_id,
+            username=owner_name,
+            instance_id=instance_id,
+            challenge_id=challenge_id,
+            ip_address=visitor_ip,
+            details=details,
+            team_id=owner_id if team_mode else None,
+        )
+
     async def get_entries(
         self,
         limit: int = 100,
         offset: int = 0,
         event_type: Optional[EventType] = None,
+        event_types: Optional[List[EventType]] = None,
         user_id: Optional[str] = None,
         challenge_id: Optional[str] = None,
+        team_id: Optional[str] = None,
+        instance_id: Optional[str] = None,
     ) -> List[LogEntry]:
-        """Get log entries with filtering from database."""
+        """Get log entries with filtering from database.
+
+        `event_type` filters to a single type; `event_types` filters to any
+        of a list (used by the Visit Logs tab to pull both instance_visit
+        and suspicious_instance_visit in one query).
+        """
         async with get_async_session() as session:
             query = select(EventLogModel)
-            
+
             # Apply filters
             if event_type:
                 query = query.where(EventLogModel.event_type == event_type.value)
+            if event_types:
+                query = query.where(EventLogModel.event_type.in_([et.value for et in event_types]))
             if user_id:
                 query = query.where(EventLogModel.user_id == user_id)
             if challenge_id:
                 query = query.where(EventLogModel.challenge_id == challenge_id)
-            
+            if team_id:
+                query = query.where(EventLogModel.team_id == team_id)
+            if instance_id:
+                query = query.where(EventLogModel.instance_id == instance_id)
+
             # Order by newest first and apply pagination
             query = query.order_by(desc(EventLogModel.timestamp))
             query = query.offset(offset).limit(limit)
@@ -386,14 +460,42 @@ class EventLogger:
                         message=db_entry.message,
                         details=details,
                         ip_address=db_entry.ip_address,
+                        team_id=db_entry.team_id,
                     )
                     entries.append(entry)
                 except Exception as e:
                     print(f"[EventLogger] Error parsing log entry {db_entry.id}: {e}")
                     continue
-            
+
             return entries
-    
+
+    async def get_visit_entries(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        suspicious_only: bool = False,
+        user_id: Optional[str] = None,
+        team_id: Optional[str] = None,
+        instance_id: Optional[str] = None,
+    ) -> List[LogEntry]:
+        """Get instance-visit correlation entries (instance_visit /
+        suspicious_instance_visit), kept as a separate query/tab from the
+        general event log since these are a different kind of signal
+        (best-effort IP correlation, not an audited action the user took)."""
+        event_types = (
+            [EventType.SUSPICIOUS_INSTANCE_VISIT]
+            if suspicious_only
+            else [EventType.INSTANCE_VISIT, EventType.SUSPICIOUS_INSTANCE_VISIT]
+        )
+        return await self.get_entries(
+            limit=limit,
+            offset=offset,
+            event_types=event_types,
+            user_id=user_id,
+            team_id=team_id,
+            instance_id=instance_id,
+        )
+
     async def get_stats(self) -> Dict[str, Any]:
         """Get logging statistics from database."""
         async with get_async_session() as session:

@@ -288,7 +288,12 @@ class DockerManager:
 
         # Acquire global semaphore to limit concurrent spawns
         async with self._spawn_semaphore:
-            # Acquire distributed lock for this owner
+            # Acquire distributed lock for this owner. This lock is scoped
+            # tightly to the cheap bookkeeping checks plus port allocation
+            # and instance registration -- it is released *before* the slow
+            # container startup step (in _finish_spawn_instance) so that
+            # spawning a different challenge for the same owner doesn't sit
+            # blocked behind an in-progress spawn's docker-compose-up.
             lock_name = f"spawn:{owner_id}"
             async with self._lock_manager.acquire(lock_name, timeout=60):
                 # Check owner instance limit (inside lock to prevent race)
@@ -309,36 +314,64 @@ class DockerManager:
                         else:
                             return False, "You already have this challenge running", None
 
-                # Keep allocation through container startup serialized across workers.
-                # Docker binds ports during compose up, so releasing this lock earlier
-                # can let another worker pick the same still-unbound port.
-                async with self._lock_manager.acquire(
-                    "port:allocation",
-                    timeout=900,
-                    blocking_timeout=120
-                ):
-                    return await self._do_spawn_instance(
-                        challenge_id, user_id, username, challenge,
-                        user_info=user_info, team_mode=team_mode
-                    )
+                # Allocate ports and register the instance (status=STARTING)
+                # while still holding the owner lock, so subsequent
+                # count/duplicate checks for this owner see it immediately.
+                instance, network_name, owner_name = await self._allocate_and_register_instance(
+                    challenge_id, user_id, username, challenge,
+                    user_info=user_info, team_mode=team_mode, owner_id=owner_id
+                )
 
-    async def _do_spawn_instance(
+                if instance is None:
+                    return False, "No available ports", None
+
+            # Owner lock (and the brief port-allocation lock inside it) are
+            # released here. Only the per-instance lifecycle lock below
+            # guards the slow container startup, so it no longer blocks
+            # other spawns for this same owner.
+            async with self._lock_manager.acquire(
+                f"instance:{instance.instance_id}:lifecycle",
+                timeout=900,
+                blocking_timeout=120
+            ):
+                return await self._finish_spawn_instance(
+                    instance=instance,
+                    challenge=challenge,
+                    challenge_id=challenge_id,
+                    user_id=user_id,
+                    username=username,
+                    user_info=user_info,
+                    team_mode=team_mode,
+                    owner_id=owner_id,
+                    owner_name=owner_name,
+                    network_name=network_name,
+                )
+
+    async def _allocate_and_register_instance(
         self,
         challenge_id: str,
         user_id: str,
         username: Optional[str],
         challenge: ChallengeConfig,
         user_info: Optional[UserInfo] = None,
-        team_mode: bool = False
-    ) -> Tuple[bool, str, Optional[Instance]]:
-        """Internal method to perform the actual spawn (called within lock)."""
+        team_mode: bool = False,
+        owner_id: Optional[str] = None,
+    ) -> Tuple[Optional[Instance], Optional[str], str]:
+        """
+        Allocate ports and register a STARTING instance.
+
+        Called while the per-owner spawn lock is held, so the instance is
+        visible to subsequent count/duplicate checks right away. Port
+        allocation is additionally guarded by a short-lived global lock
+        since ports are a resource shared across all owners -- that lock is
+        released as soon as allocation completes, well before the slow
+        container startup that happens later in `_finish_spawn_instance`.
+        """
 
         # Determine owner_id for instance naming
         if team_mode and user_info and user_info.team_id:
-            owner_id = user_info.team_id
             owner_name = user_info.team_name or f"team_{user_info.team_id}"
         else:
-            owner_id = user_id
             owner_name = username or user_id
 
         # Generate Docker-safe instance/project ID.
@@ -346,74 +379,66 @@ class DockerManager:
         owner_slug = safe_docker_name(owner_id, "owner", max_length=16)
         instance_id = f"{challenge_slug}-{owner_slug}-{uuid.uuid4().hex[:8]}"
 
-        # Allocate ports (tries to reuse saved ports for this owner+challenge)
-        port_mapping = await self.port_manager.allocate_ports_for_user(
-            instance_id=instance_id,
-            user_id=owner_id,  # Use owner_id for port allocation
-            challenge_id=challenge_id,
-            internal_ports=challenge.ports,
-            username=owner_name
-        )
-
-        if port_mapping is None:
-            return False, "No available ports", None
-
-        # Generate network name for isolation
-        network_name = None
-        if settings.NETWORK_ISOLATION_ENABLED:
-            network_name = f"{settings.NETWORK_PREFIX}-{instance_id}"
-
-        # Create instance object with team info if applicable
-        instance = Instance(
-            instance_id=instance_id,
-            challenge_id=challenge_id,
-            user_id=user_id,
-            username=username or user_id,
-            status=InstanceStatus.STARTING,
-            ports=port_mapping,
-            expires_at=utcnow() + timedelta(seconds=challenge.timeout),
-            # Team mode fields
-            team_id=user_info.team_id if team_mode and user_info else None,
-            team_name=user_info.team_name if team_mode and user_info else None,
-            owner_id=owner_id  # user_id in user mode, team_id in team mode
-        )
-
-        # Store network name
-        if network_name:
-            instance.network_name = network_name
-
-        # Generate connection URLs for all ports
-        public_host = settings.get_public_host()
-        public_urls: Dict[int, str] = {}
-        for internal_port, external_port in port_mapping.items():
-            public_urls[internal_port] = f"{public_host}:{external_port}"
-
-        instance.public_urls = public_urls
-
-        # Primary URL is the first port (for backward compatibility)
-        if public_urls:
-            first_internal_port = list(port_mapping.keys())[0]
-            instance.public_url = public_urls[first_internal_port]
-
-        self.instances[instance_id] = instance
-
+        # Allocation itself is the only part that needs the global port lock --
+        # it's released as soon as ports are assigned and the instance is
+        # registered, not held through container startup.
         async with self._lock_manager.acquire(
-            f"instance:{instance_id}:lifecycle",
+            "port:allocation",
             timeout=900,
             blocking_timeout=120
         ):
-            return await self._finish_spawn_instance(
-                instance=instance,
-                challenge=challenge,
+            # Allocate ports (tries to reuse saved ports for this owner+challenge)
+            port_mapping = await self.port_manager.allocate_ports_for_user(
+                instance_id=instance_id,
+                user_id=owner_id,  # Use owner_id for port allocation
+                challenge_id=challenge_id,
+                internal_ports=challenge.ports,
+                username=owner_name
+            )
+
+            if port_mapping is None:
+                return None, None, owner_name
+
+            # Generate network name for isolation
+            network_name = None
+            if settings.NETWORK_ISOLATION_ENABLED:
+                network_name = f"{settings.NETWORK_PREFIX}-{instance_id}"
+
+            # Create instance object with team info if applicable
+            instance = Instance(
+                instance_id=instance_id,
                 challenge_id=challenge_id,
                 user_id=user_id,
-                username=username,
-                user_info=user_info,
-                team_mode=team_mode,
-                owner_id=owner_id,
-                owner_name=owner_name,
-                network_name=network_name,
+                username=username or user_id,
+                status=InstanceStatus.STARTING,
+                ports=port_mapping,
+                expires_at=utcnow() + timedelta(seconds=challenge.timeout),
+                # Team mode fields
+                team_id=user_info.team_id if team_mode and user_info else None,
+                team_name=user_info.team_name if team_mode and user_info else None,
+                owner_id=owner_id  # user_id in user mode, team_id in team mode
             )
+
+            # Store network name
+            if network_name:
+                instance.network_name = network_name
+
+            # Generate connection URLs for all ports
+            public_host = settings.get_public_host()
+            public_urls: Dict[int, str] = {}
+            for internal_port, external_port in port_mapping.items():
+                public_urls[internal_port] = f"{public_host}:{external_port}"
+
+            instance.public_urls = public_urls
+
+            # Primary URL is the first port (for backward compatibility)
+            if public_urls:
+                first_internal_port = list(port_mapping.keys())[0]
+                instance.public_url = public_urls[first_internal_port]
+
+            self.instances[instance_id] = instance
+
+            return instance, network_name, owner_name
 
     async def _finish_spawn_instance(
         self,

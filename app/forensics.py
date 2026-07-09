@@ -20,6 +20,7 @@ import shutil
 
 from .config import settings
 from .docker_client import get_docker_client
+from .subprocess_utils import run_subprocess
 
 
 def utcnow() -> datetime:
@@ -277,17 +278,12 @@ class ForensicsManager:
                     log_lines.append(f"{'─' * 50}\n")
                     
                     # Get container logs with tail limit
-                    log_result = await asyncio.create_subprocess_exec(
-                        "docker", "logs", "--tail", str(settings.FORENSICS_TAIL_LINES),
-                        "--timestamps", container_id,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
+                    log_result = await run_subprocess(
+                        ["docker", "logs", "--tail", str(settings.FORENSICS_TAIL_LINES),
+                         "--timestamps", container_id],
+                        timeout=30,
                     )
-                    log_stdout, log_stderr = await asyncio.wait_for(
-                        log_result.communicate(), timeout=30
-                    )
-                    
-                    container_logs = log_stdout.decode(errors="replace") + log_stderr.decode(errors="replace")
+                    container_logs = log_result.stdout + log_result.stderr
                     
                     # Check size limit
                     if total_size + len(container_logs) > max_size:

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     async_sessionmaker
 )
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 
 from .models import Base
 
@@ -69,6 +69,32 @@ async def init_database(database_url: Optional[str] = None) -> None:
     # Create all tables
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Lightweight migration: create_all only creates missing *tables*,
+        # not new columns on tables that already exist. event_logs.team_id
+        # was added after initial release, so backfill it on existing DBs.
+        # Check column existence first (rather than relying on ALTER TABLE
+        # to fail-and-be-ignored) because on Postgres a failed statement
+        # poisons the rest of the transaction, aborting the other
+        # migration/index statements below it.
+        try:
+            def _get_column_names(sync_conn):
+                return {col["name"] for col in inspect(sync_conn).get_columns("event_logs")}
+
+            existing_columns = await conn.run_sync(_get_column_names)
+            if "team_id" not in existing_columns:
+                await conn.execute(text(
+                    "ALTER TABLE event_logs ADD COLUMN team_id VARCHAR(64)"
+                ))
+                print("[Database] Migrated: added event_logs.team_id column")
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_event_logs_team_id ON event_logs (team_id)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_event_team_type ON event_logs (team_id, event_type)"
+            ))
+        except Exception as exc:
+            print(f"[Database] Warning: failed to migrate/index event_logs.team_id: {exc}")
         try:
             await conn.execute(text(
                 "DELETE FROM flag_mappings "

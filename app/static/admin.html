@@ -13,20 +13,86 @@
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <style>
-        /* Navigation Tabs */
+        /* ===================================================================
+           Admin Shell Layout: fixed-width left sidebar + full-width content
+           =================================================================== */
+        html, body {
+            height: 100%;
+        }
+
+        .admin-shell {
+            display: flex;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        /* Sidebar */
+        .admin-sidebar {
+            flex: 0 0 240px;
+            width: 240px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 50;
+            transition: width 0.2s ease, flex-basis 0.2s ease;
+        }
+
+        .admin-sidebar-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 20px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-sidebar-header .logo-icon {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            color: var(--accent-primary);
+        }
+
+        .admin-sidebar-header .logo-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .admin-sidebar-header h1 {
+            font-size: 1.05rem;
+            margin: 0;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .admin-sidebar-back {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-sidebar-back .back-link {
+            font-size: 0.85rem;
+        }
+
+        /* Navigation Tabs (now stacked vertically in the sidebar) */
         .admin-nav {
             display: flex;
+            flex-direction: column;
             gap: 4px;
-            background: var(--bg-secondary);
-            padding: 8px;
-            border-radius: var(--radius-md);
-            margin-bottom: 24px;
-            border: 1px solid var(--border-color);
+            padding: 12px;
+            flex: 1;
+            overflow-y: auto;
         }
 
         .nav-tab {
-            flex: 1;
-            padding: 12px 20px;
+            width: 100%;
+            padding: 12px 14px;
             background: transparent;
             border: none;
             border-radius: var(--radius-sm);
@@ -37,8 +103,9 @@
             transition: all 0.2s;
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 8px;
+            justify-content: flex-start;
+            gap: 12px;
+            text-align: left;
         }
 
         .nav-tab:hover {
@@ -52,7 +119,55 @@
         }
 
         .nav-tab .tab-icon {
-            font-size: 1.1rem;
+            width: 18px;
+            height: 18px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .nav-tab .tab-icon svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .nav-tab .tab-label {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Main content area to the right of the sidebar */
+        .admin-main {
+            flex: 1 1 auto;
+            min-width: 0;
+            width: 100%;
+            padding: 24px 32px;
+        }
+
+        .admin-topbar {
+            display: none;
+        }
+
+        /* Sidebar collapse (hamburger) toggle - hidden on wide viewports */
+        .sidebar-toggle {
+            display: none;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            width: 38px;
+            height: 38px;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .sidebar-toggle svg {
+            width: 20px;
+            height: 20px;
         }
 
         .tab-page {
@@ -110,10 +225,7 @@
             font-size: 2.5rem;
             font-weight: 700;
             font-family: var(--font-mono);
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-info));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--text-primary);
         }
 
         .stat-label {
@@ -239,6 +351,27 @@
         .event-system_stop {
             background: #64748b20;
             color: #94a3b8;
+        }
+
+        .event-suspicious_submission {
+            background: #ef444420;
+            color: #f87171;
+        }
+
+        .event-auth_failure {
+            background: #ef444420;
+            color: #f87171;
+        }
+
+        .event-instance_visit {
+            background: #10b98120;
+            color: #34d399;
+        }
+
+        .event-suspicious_instance_visit {
+            background: #ef444420;
+            color: #f87171;
+            font-weight: 700;
         }
 
         .log-time {
@@ -703,7 +836,17 @@
 
         .file-tree-item .icon {
             width: 16px;
-            text-align: center;
+            height: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: var(--text-muted);
+        }
+
+        .file-tree-item .icon svg {
+            width: 100%;
+            height: 100%;
         }
 
         .file-tree-children {
@@ -787,9 +930,110 @@
             .file-tree {
                 max-height: 200px;
             }
+        }
 
-            .admin-nav {
-                flex-direction: column;
+        /* Responsive sidebar: collapse to icons-only below 1024px, and to an
+           off-canvas drawer (hamburger toggle) below 700px. */
+        @media (max-width: 1024px) {
+            .admin-sidebar {
+                flex: 0 0 72px;
+                width: 72px;
+            }
+
+            .admin-sidebar-header h1,
+            .nav-tab .tab-label {
+                display: none;
+            }
+
+            .admin-sidebar-header {
+                justify-content: center;
+                padding: 16px 8px;
+            }
+
+            .nav-tab {
+                justify-content: center;
+                padding: 12px 8px;
+            }
+
+            .admin-sidebar-back {
+                text-align: center;
+                padding: 10px 6px;
+            }
+
+            .admin-sidebar-back .back-link span.back-text {
+                display: none;
+            }
+
+            .admin-main {
+                padding: 20px;
+            }
+        }
+
+        @media (max-width: 700px) {
+            .admin-shell {
+                position: relative;
+            }
+
+            .admin-sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                flex: 0 0 240px;
+                width: 240px;
+                transform: translateX(-100%);
+                transition: transform 0.2s ease;
+                box-shadow: var(--shadow-lg);
+            }
+
+            .admin-sidebar.open {
+                transform: translateX(0);
+            }
+
+            .admin-sidebar-header h1,
+            .nav-tab .tab-label {
+                display: inline;
+            }
+
+            .admin-sidebar-header {
+                justify-content: flex-start;
+                padding: 20px 16px;
+            }
+
+            .nav-tab {
+                justify-content: flex-start;
+                padding: 12px 14px;
+            }
+
+            .admin-topbar {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px 16px;
+                border-bottom: 1px solid var(--border-color);
+                background: var(--bg-secondary);
+                position: sticky;
+                top: 0;
+                z-index: 40;
+            }
+
+            .sidebar-toggle {
+                display: flex;
+            }
+
+            .admin-main {
+                padding: 16px;
+            }
+
+            .sidebar-backdrop {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.5);
+                z-index: 45;
+            }
+
+            .sidebar-backdrop.open {
+                display: block;
             }
         }
 
@@ -1269,11 +1513,11 @@
 </head>
 
 <body>
-    <div class="container">
-        <!-- Header -->
+    <!-- Admin Auth Section (shown before login; centered like the public dashboard) -->
+    <div class="container" id="admin-auth-wrapper">
         <header class="header">
             <div class="logo">
-                <span class="logo-icon">🔧</span>
+                <span class="logo-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .35 1.9l.05.05a2 2 0 1 1-2.85 2.8l-.05-.05a1.7 1.7 0 0 0-1.9-.35 1.7 1.7 0 0 0-1 1.55V19.5a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.9.35l-.05.05a2 2 0 1 1-2.85-2.8l.05-.05a1.7 1.7 0 0 0 .35-1.9 1.7 1.7 0 0 0-1.55-1H4.5a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.35-1.9l-.05-.05a2 2 0 1 1 2.85-2.85l.05.05a1.7 1.7 0 0 0 1.9.35h0a1.7 1.7 0 0 0 1-1.55V4.5a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.9-.35l.05-.05a2 2 0 1 1 2.85 2.85l-.05.05a1.7 1.7 0 0 0-.35 1.9v0a1.7 1.7 0 0 0 1.55 1h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.55 1z" stroke-linejoin="round"/></svg></span>
                 <h1>Whaley Admin Dashboard</h1>
             </div>
             <div class="status-bar">
@@ -1284,7 +1528,7 @@
         <!-- Admin Auth Section -->
         <section class="card auth-card" id="admin-auth-section">
             <div class="card-header">
-                <h2 id="admin-auth-title">🔐 Admin Authentication</h2>
+                <h2 id="admin-auth-title">Admin Authentication</h2>
             </div>
             <div class="card-body">
                 <p class="auth-description" id="admin-auth-description">Enter your CTFd access token to access the
@@ -1296,48 +1540,70 @@
                             onkeypress="if(event.key==='Enter')adminLogin()">
                     </div>
                     <button class="btn btn-primary" onclick="adminLogin()">
-                        <span class="btn-icon">🔑</span> Access Dashboard
+                        <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5 18 5M16 7l2 2M13.3 9.7l2 2" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Access Dashboard
                     </button>
                 </div>
             </div>
         </section>
+    </div>
 
-        <!-- Main Admin Content -->
-        <main class="main-content hidden" id="admin-content">
+    <!-- Admin Shell: left sidebar + full-width content (shown after login) -->
+    <div class="admin-shell hidden" id="admin-content">
+        <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
+
+        <aside class="admin-sidebar" id="admin-sidebar">
+            <div class="admin-sidebar-header">
+                <span class="logo-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .35 1.9l.05.05a2 2 0 1 1-2.85 2.8l-.05-.05a1.7 1.7 0 0 0-1.9-.35 1.7 1.7 0 0 0-1 1.55V19.5a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.9.35l-.05.05a2 2 0 1 1-2.85-2.8l.05-.05a1.7 1.7 0 0 0 .35-1.9 1.7 1.7 0 0 0-1.55-1H4.5a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.35-1.9l-.05-.05a2 2 0 1 1 2.85-2.85l.05.05a1.7 1.7 0 0 0 1.9.35h0a1.7 1.7 0 0 0 1-1.55V4.5a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.9-.35l.05-.05a2 2 0 1 1 2.85 2.85l-.05.05a1.7 1.7 0 0 0-.35 1.9v0a1.7 1.7 0 0 0 1.55 1h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.55 1z" stroke-linejoin="round"/></svg></span>
+                <h1>Whaley Admin Dashboard</h1>
+            </div>
+            <div class="admin-sidebar-back">
+                <a href="/" class="back-link"><span aria-hidden="true">←</span> <span class="back-text">Back to Instancer</span></a>
+            </div>
+
             <!-- Navigation Tabs -->
             <nav class="admin-nav">
                 <button class="nav-tab active" data-page="dashboard" onclick="switchPage('dashboard')">
-                    <span class="tab-icon">📊</span>
-                    <span>Dashboard</span>
+                    <span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg></span>
+                    <span class="tab-label">Dashboard</span>
                 </button>
                 <button class="nav-tab" data-page="logs" onclick="switchPage('logs')">
-                    <span class="tab-icon">📜</span>
-                    <span>Whaley Logs</span>
+                    <span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4.5h9l3.5 3.5v11.5H6z" stroke-linejoin="round"/><path d="M9 11h6M9 14.5h6M9 18h4"/></svg></span>
+                    <span class="tab-label">Whaley Logs</span>
                 </button>
                 <button class="nav-tab" data-page="flags" onclick="switchPage('flags')">
-                    <span class="tab-icon">🚩</span>
-                    <span>Dynamic Flags</span>
+                    <span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4v16" stroke-linecap="round"/><path d="M6 4.5h11l-3 3.5 3 3.5H6z" stroke-linejoin="round"/></svg></span>
+                    <span class="tab-label">Dynamic Flags</span>
                 </button>
                 <button class="nav-tab" data-page="challenges" onclick="switchPage('challenges')">
-                    <span class="tab-icon">📦</span>
-                    <span>Challenge Manager</span>
+                    <span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8 12 4l8.5 4-8.5 4-8.5-4Z" stroke-linejoin="round"/><path d="M3.5 8v8l8.5 4 8.5-4V8" stroke-linejoin="round"/><path d="M12 12v8"/></svg></span>
+                    <span class="tab-label">Challenge Manager</span>
                 </button>
                 <button class="nav-tab" data-page="monitoring" onclick="switchPage('monitoring')">
-                    <span class="tab-icon">📈</span>
-                    <span>Monitoring</span>
+                    <span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                    <span class="tab-label">Monitoring</span>
                 </button>
                 <button class="nav-tab" data-page="settings" onclick="switchPage('settings')">
-                    <span class="tab-icon">⚙️</span>
-                    <span>Settings</span>
+                    <span class="tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .35 1.9l.05.05a2 2 0 1 1-2.85 2.8l-.05-.05a1.7 1.7 0 0 0-1.9-.35 1.7 1.7 0 0 0-1 1.55V19.5a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.9.35l-.05.05a2 2 0 1 1-2.85-2.8l.05-.05a1.7 1.7 0 0 0 .35-1.9 1.7 1.7 0 0 0-1.55-1H4.5a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.35-1.9l-.05-.05a2 2 0 1 1 2.85-2.85l.05.05a1.7 1.7 0 0 0 1.9.35h0a1.7 1.7 0 0 0 1-1.55V4.5a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.9-.35l.05-.05a2 2 0 1 1 2.85 2.85l-.05.05a1.7 1.7 0 0 0-.35 1.9v0a1.7 1.7 0 0 0 1.55 1h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.55 1z" stroke-linejoin="round"/></svg></span>
+                    <span class="tab-label">Settings</span>
                 </button>
             </nav>
+        </aside>
+
+        <main class="admin-main" id="admin-main">
+            <!-- Slim top bar (mobile only): hamburger toggle + title -->
+            <div class="admin-topbar">
+                <button class="sidebar-toggle" id="sidebar-toggle-btn" onclick="toggleSidebar()" aria-label="Toggle navigation">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg>
+                </button>
+                <strong>Whaley Admin Dashboard</strong>
+            </div>
 
             <!-- Page 1: Dashboard -->
             <div class="tab-page active" id="page-dashboard">
                 <!-- Stats Section -->
                 <section class="card">
                     <div class="card-header">
-                        <h2>📊 Statistics</h2>
+                        <h2>Statistics</h2>
                         <span class="refresh-indicator" id="last-refresh">Auto-refresh: 30s</span>
                     </div>
                     <div class="card-body">
@@ -1389,9 +1655,9 @@
                 <!-- Manual Spawn Section -->
                 <section class="card instances-section">
                     <div class="card-header">
-                        <h2>🛠️ Manual Instance Control</h2>
+                        <h2>Manual Instance Control</h2>
                         <button class="btn btn-secondary btn-sm" onclick="loadManualSpawnOptions()">
-                            <span class="btn-icon">🔄</span> Reload Challenges
+                            Reload Challenges
                         </button>
                     </div>
                     <div class="card-body">
@@ -1405,7 +1671,7 @@
                             <input type="text" id="manual-spawn-team-id" placeholder="Team ID (optional)">
                             <input type="text" id="manual-spawn-team-name" placeholder="Team name (optional)">
                             <button class="btn btn-primary btn-sm" onclick="adminSpawnInstance()">
-                                🚀 Spawn
+                                Spawn
                             </button>
                         </div>
                     </div>
@@ -1414,9 +1680,9 @@
                 <!-- Active Instances Section -->
                 <section class="card instances-section">
                     <div class="card-header">
-                        <h2>🚀 Active Instances</h2>
+                        <h2>Active Instances</h2>
                         <button class="btn btn-secondary btn-sm" onclick="loadAllInstances()">
-                            <span class="btn-icon">🔄</span> Refresh
+                            Refresh
                         </button>
                     </div>
                     <div class="card-body">
@@ -1434,34 +1700,38 @@
                 <div class="sub-tabs" style="display: flex; gap: 8px; margin-bottom: 16px;">
                     <button class="btn btn-primary btn-sm sub-tab active" data-subtab="events"
                         onclick="switchLogTab('events')">
-                        📜 Event Logs
+                        Event Logs
+                    </button>
+                    <button class="btn btn-secondary btn-sm sub-tab" data-subtab="visits"
+                        onclick="switchLogTab('visits')">
+                        Visit Logs
                     </button>
                     <button class="btn btn-secondary btn-sm sub-tab" data-subtab="ports"
                         onclick="switchLogTab('ports')">
-                        🔌 User Ports
+                        User Ports
                     </button>
                     <button class="btn btn-secondary btn-sm sub-tab" data-subtab="forensics"
                         onclick="switchLogTab('forensics')">
-                        🔍 Instance Forensics
+                        Instance Forensics
                     </button>
                     <button class="btn btn-secondary btn-sm sub-tab" data-subtab="pcap" onclick="switchLogTab('pcap')">
-                        📡 Packet Capture
+                        Packet Capture
                     </button>
                 </div>
 
                 <!-- Event Logs Section -->
                 <section class="card log-section" id="section-events">
                     <div class="card-header">
-                        <h2>📜 Event Logs</h2>
+                        <h2>Event Logs</h2>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-secondary btn-sm" onclick="exportLogsJSON()" title="Export as JSON">
-                                <span class="btn-icon">📄</span> JSON
+                                JSON
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="exportLogsCSV()" title="Export as CSV">
-                                <span class="btn-icon">📊</span> CSV
+                                CSV
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="loadLogs()">
-                                <span class="btn-icon">🔄</span> Refresh
+                                Refresh
                             </button>
                         </div>
                     </div>
@@ -1515,16 +1785,72 @@
                     </div>
                 </section>
 
+                <!-- Visit Logs Section -->
+                <section class="card log-section hidden" id="section-visits">
+                    <div class="card-header">
+                        <h2>Visit Logs</h2>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-sm" onclick="loadVisitLogs()">
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--text-muted); margin-bottom: 16px;">
+                            IP-correlated instance visits, derived from packet captures against each owner's
+                            (or team's) known IP history. Best-effort heuristic, not an audit trail.
+                        </p>
+
+                        <div class="log-filters">
+                            <select id="filter-visit-suspicious" onchange="currentVisitPage=0; loadVisitLogs()">
+                                <option value="">All Visits</option>
+                                <option value="suspicious">Suspicious Only</option>
+                            </select>
+                            <input type="text" id="filter-visit-user" placeholder="Filter by owner/username..."
+                                onkeyup="debounceLoadVisitLogs()">
+                            <select id="filter-visit-limit" onchange="currentVisitPage=0; loadVisitLogs()">
+                                <option value="50" selected>50 entries</option>
+                                <option value="100">100 entries</option>
+                                <option value="200">200 entries</option>
+                                <option value="500">500 entries</option>
+                            </select>
+                        </div>
+
+                        <div class="table-wrapper" style="overflow-x: auto;">
+                            <table class="logs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Type</th>
+                                        <th>Owner / Team</th>
+                                        <th>Instance</th>
+                                        <th>Challenge</th>
+                                        <th>Visitor IP</th>
+                                        <th>Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="visit-logs-body">
+                                    <tr>
+                                        <td colspan="7" class="loading">Loading visit logs...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="pagination" id="pagination-visits"></div>
+                    </div>
+                </section>
+
                 <!-- User Ports Section -->
                 <section class="card log-section hidden" id="section-ports">
                     <div class="card-header">
-                        <h2>🔌 User Port Mappings</h2>
+                        <h2>User Port Mappings</h2>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-danger btn-sm" onclick="clearAllUserPorts()">
-                                <span class="btn-icon">🗑️</span> Clear All
+                                Clear All
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="loadUserPorts()">
-                                <span class="btn-icon">🔄</span> Refresh
+                                Refresh
                             </button>
                         </div>
                     </div>
@@ -1567,7 +1893,7 @@
                 <!-- Instance Forensics Section -->
                 <section class="card log-section hidden" id="section-forensics">
                     <div class="card-header">
-                        <h2>🔍 Instance Forensics</h2>
+                        <h2>Instance Forensics</h2>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <label class="toggle-switch"
                                 title="Auto Capture: Automatically log containers on terminate">
@@ -1578,10 +1904,10 @@
                             <span style="font-size: 0.85rem; color: var(--text-muted);">Auto Capture</span>
                             <button class="btn btn-danger btn-sm" onclick="clearForensicsLogs()"
                                 style="margin-left: 16px;">
-                                <span class="btn-icon">🗑️</span> Clear All
+                                Clear All
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="loadForensicsLogs()">
-                                <span class="btn-icon">🔄</span> Refresh
+                                Refresh
                             </button>
                         </div>
                     </div>
@@ -1613,7 +1939,7 @@
                         <!-- Live Capture Section -->
                         <div
                             style="background: var(--bg-secondary); border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px; border: 1px solid var(--border-color);">
-                            <h3 style="margin: 0 0 12px 0; font-size: 1rem;">📸 Live Capture (On-Demand)</h3>
+                            <h3 style="margin: 0 0 12px 0; font-size: 1rem;">Live Capture (On-Demand)</h3>
                             <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">
                                 Capture logs from a running instance without stopping it. Useful for debugging.
                             </p>
@@ -1623,7 +1949,7 @@
                                     <option value="">-- Select Running Instance --</option>
                                 </select>
                                 <button class="btn btn-primary btn-sm" onclick="doLiveCapture()">
-                                    <span class="btn-icon">📸</span> Capture Now
+                                    Capture Now
                                 </button>
                             </div>
                         </div>
@@ -1631,7 +1957,7 @@
                         <!-- Info Box -->
                         <div
                             style="background: rgba(59, 130, 246, 0.1); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 16px; border-left: 3px solid var(--accent-info);">
-                            <strong style="color: var(--accent-info);">ℹ️ About Instance Forensics</strong>
+                            <strong style="color: var(--accent-info);">ℹAbout Instance Forensics</strong>
                             <ul
                                 style="margin: 8px 0 0 0; padding-left: 20px; color: var(--text-secondary); font-size: 0.85rem;">
                                 <li><strong>Auto Capture:</strong> Automatically dump container logs when instances
@@ -1639,7 +1965,7 @@
                                 <li><strong>Live Capture:</strong> On-demand log capture from running containers without
                                     stopping them</li>
                                 <li>Logs are compressed and auto-deleted after retention period</li>
-                                <li>⚠️ Auto Capture may impact server resources - see documentation for sizing</li>
+                                <li>Auto Capture may impact server resources - see documentation for sizing</li>
                             </ul>
                         </div>
 
@@ -1686,7 +2012,7 @@
                 <!-- Native Packet Capture Section -->
                 <section class="card log-section hidden" id="section-pcap">
                     <div class="card-header">
-                        <h2>📡 Packet Capture</h2>
+                        <h2>Packet Capture</h2>
                         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                             <select id="pcap-mode-select" onchange="changePcapPolicyMode()"
                                 title="Packet capture policy for future instance spawns">
@@ -1697,10 +2023,10 @@
                             <span style="font-size: 0.85rem; color: var(--text-muted);" id="pcap-enabled-label">Capture
                                 all new instances</span>
                             <button class="btn btn-danger btn-sm" onclick="cleanupPcaps()" style="margin-left: 16px;">
-                                <span class="btn-icon">🧹</span> Cleanup Old
+                                Cleanup Old
                             </button>
                             <button class="btn btn-secondary btn-sm" onclick="loadPcapData(true)">
-                                <span class="btn-icon">🔄</span> Refresh
+                                Refresh
                             </button>
                         </div>
                     </div>
@@ -1768,10 +2094,10 @@
                                         placeholder="Search payloads for flags, hosts, tokens..."
                                         onkeypress="if(event.key==='Enter') searchPcapFlows()">
                                     <button class="btn btn-secondary btn-sm" onclick="searchPcapFlows()">
-                                        <span class="btn-icon">🔎</span> Search
+                                        Search
                                     </button>
                                     <button class="btn btn-secondary btn-sm" onclick="clearPcapSearch()">
-                                        <span class="btn-icon">✕</span> Clear
+                                        Clear
                                     </button>
                                 </div>
 
@@ -1787,7 +2113,7 @@
 
                                 <div style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px;">
                                     <button class="btn btn-primary btn-sm" onclick="downloadSelectedPcap()">
-                                        <span class="btn-icon">💾</span> Download Raw Capture
+                                        Download Raw Capture
                                     </button>
                                 </div>
 
@@ -1841,9 +2167,9 @@
                 <!-- Status Banner -->
                 <section class="card" id="flags-status-card">
                     <div class="card-header">
-                        <h2>🚩 Dynamic Flags Status</h2>
+                        <h2>Dynamic Flags Status</h2>
                         <button class="btn btn-secondary btn-sm" onclick="loadFlagsData()">
-                            <span class="btn-icon">🔄</span> Refresh
+                            Refresh
                         </button>
                     </div>
                     <div class="card-body">
@@ -1872,13 +2198,13 @@
                 <!-- Suspicious Submissions -->
                 <section class="card">
                     <div class="card-header">
-                        <h2>⚠️ Suspicious Submissions</h2>
+                        <h2>Suspicious Submissions</h2>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-primary btn-sm" onclick="checkSubmissions()">
-                                <span class="btn-icon">🔍</span> Check Now
+                                Check Now
                             </button>
                             <button class="btn btn-danger btn-sm" onclick="clearSuspicious()">
-                                <span class="btn-icon">🗑️</span> Clear
+                                Clear
                             </button>
                         </div>
                     </div>
@@ -1912,7 +2238,7 @@
                 <!-- Flag Mappings -->
                 <section class="card">
                     <div class="card-header">
-                        <h2>🔐 Flag Mappings</h2>
+                        <h2>Flag Mappings</h2>
                     </div>
                     <div class="card-body">
                         <p style="color: var(--text-muted); margin-bottom: 16px;">
@@ -1951,9 +2277,9 @@
                 <!-- Challenge Mapping -->
                 <section class="card">
                     <div class="card-header">
-                        <h2>🔗 Challenge ID Mapping</h2>
+                        <h2>Challenge ID Mapping</h2>
                         <button class="btn btn-primary btn-sm" onclick="openSyncWizard()">
-                            <span class="btn-icon">🔄</span> Sync Wizard
+                            Sync Wizard
                         </button>
                     </div>
                     <div class="card-body">
@@ -1964,7 +2290,7 @@
                         <!-- Manual Add Mapping Form -->
                         <details style="margin-bottom: 20px;">
                             <summary style="cursor: pointer; color: var(--text-muted); font-size: 0.9rem;">
-                                ➕ Manual Mapping (advanced)
+                                Manual Mapping (advanced)
                             </summary>
                             <div
                                 style="display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; align-items: flex-end; padding: 12px; background: var(--bg-secondary); border-radius: var(--radius-sm);">
@@ -1985,7 +2311,7 @@
                                         style="width: 100%; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary);">
                                 </div>
                                 <button class="btn btn-primary" onclick="addChallengeMapping()">
-                                    <span class="btn-icon">➕</span> Add
+                                    Add
                                 </button>
                             </div>
                         </details>
@@ -2017,9 +2343,9 @@
             <div class="tab-page" id="page-challenges">
                 <section class="card">
                     <div class="card-header">
-                        <h2>📦 Challenge Manager</h2>
+                        <h2>Challenge Manager</h2>
                         <button class="btn btn-secondary btn-sm" onclick="loadChallengesList()">
-                            <span class="btn-icon">🔄</span> Refresh
+                            Refresh
                         </button>
                     </div>
                     <div class="card-body">
@@ -2027,7 +2353,7 @@
                         <div class="upload-zone" id="upload-zone"
                             onclick="document.getElementById('challenge-file').click()">
                             <input type="file" id="challenge-file" accept=".zip" onchange="uploadChallenge(this)">
-                            <p>📁 <strong>Click or drag</strong> a .zip file to upload a new challenge</p>
+                            <p><strong>Click or drag</strong> a .zip file to upload a new challenge</p>
                             <p style="font-size: 0.85rem; color: var(--text-muted);">The zip should contain
                                 challenge.yaml and docker-compose.yaml</p>
                         </div>
@@ -2041,16 +2367,16 @@
                         <div id="file-browser-section" class="hidden">
                             <div
                                 style="display: flex; justify-content: space-between; align-items: center; margin: 20px 0 12px;">
-                                <h3 style="margin: 0;">📝 File Editor: <span id="selected-challenge-name"></span></h3>
+                                <h3 style="margin: 0;">File Editor: <span id="selected-challenge-name"></span></h3>
                                 <button class="btn btn-secondary btn-sm" onclick="closeFileEditor()">
-                                    ✕ Close
+                                    Close
                                 </button>
                             </div>
 
                             <div class="new-file-form">
                                 <input type="text" id="new-file-path" placeholder="path/to/new-file.txt">
                                 <button class="btn btn-secondary btn-sm" onclick="createNewFile()">
-                                    <span class="btn-icon">➕</span> New File
+                                    New File
                                 </button>
                             </div>
 
@@ -2074,8 +2400,8 @@
                 <!-- System Overview -->
                 <section class="card">
                     <div class="card-header">
-                        <h2>📊 System Overview</h2>
-                        <button class="btn btn-primary" onclick="refreshMonitoring()">🔄 Refresh</button>
+                        <h2>System Overview</h2>
+                        <button class="btn btn-primary" onclick="refreshMonitoring()">Refresh</button>
                     </div>
                     <div class="card-body">
                         <div class="stats-grid">
@@ -2103,7 +2429,7 @@
 
                 <section class="card">
                     <div class="card-header">
-                        <h2>🛡 Firewall Rate Limits</h2>
+                        <h2>Firewall Rate Limits</h2>
                         <div class="header-actions">
                             <button class="btn btn-secondary btn-sm" onclick="loadFirewallStatus()">Refresh Status</button>
                             <button class="btn btn-secondary btn-sm" onclick="cleanupFirewallRules()">Cleanup Stale</button>
@@ -2139,7 +2465,7 @@
                 <!-- Instance Inventory -->
                 <section class="card">
                     <div class="card-header">
-                        <h2>🔍 Instance Inventory</h2>
+                        <h2>Instance Inventory</h2>
                         <div class="header-actions">
                             <button class="btn btn-secondary btn-sm" onclick="sampleMonitoringPage()">Sample Page Metrics</button>
                             <label>
@@ -2163,13 +2489,13 @@
             <div class="tab-page" id="page-settings">
                 <section class="card">
                     <div class="card-header">
-                        <h2>⚙️ Whaley Settings</h2>
+                        <h2>Whaley Settings</h2>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-secondary btn-sm" onclick="loadSettings()">
-                                <span class="btn-icon">🔄</span> Refresh
+                                Refresh
                             </button>
                             <button class="btn btn-primary btn-sm" onclick="saveSettings()">
-                                <span class="btn-icon">💾</span> Save All
+                                Save All
                             </button>
                         </div>
                     </div>
@@ -2184,55 +2510,55 @@
 
                         <!-- Instance Settings -->
                         <div class="settings-section">
-                            <h3 class="settings-section-title">📦 Instance Settings</h3>
+                            <h3 class="settings-section-title">Instance Settings</h3>
                             <div class="settings-grid" id="settings-instance"></div>
                         </div>
 
                         <!-- Resource Limits -->
                         <div class="settings-section">
-                            <h3 class="settings-section-title">🔒 Resource Limits</h3>
+                            <h3 class="settings-section-title">Resource Limits</h3>
                             <div class="settings-grid" id="settings-resources"></div>
                         </div>
 
                         <!-- Network Settings -->
                         <div class="settings-section">
-                            <h3 class="settings-section-title">🌐 Network & Ports</h3>
+                            <h3 class="settings-section-title">Network & Ports</h3>
                             <div class="settings-grid" id="settings-network"></div>
                         </div>
 
                         <!-- Features -->
                         <div class="settings-section">
-                            <h3 class="settings-section-title">🚩 Features</h3>
+                            <h3 class="settings-section-title">Features</h3>
                             <div class="settings-grid" id="settings-features"></div>
                         </div>
 
                         <!-- Authentication & CTFd -->
                         <div class="settings-section">
-                            <h3 class="settings-section-title">🔐 Authentication</h3>
+                            <h3 class="settings-section-title">Authentication</h3>
                             <div class="settings-grid" id="settings-auth"></div>
                         </div>
 
                         <!-- Forensics -->
                         <div class="settings-section">
-                            <h3 class="settings-section-title">🔍 Forensics</h3>
+                            <h3 class="settings-section-title">Forensics</h3>
                             <div class="settings-grid" id="settings-forensics"></div>
                         </div>
 
                         <div class="settings-section">
-                            <h3 class="settings-section-title">📡 Packet Capture</h3>
+                            <h3 class="settings-section-title">Packet Capture</h3>
                             <div class="settings-grid" id="settings-pcap"></div>
                         </div>
                     </div>
                 </section>
             </div>
-        </main>
 
-        <!-- Footer -->
-        <footer class="footer">
-            <p>🔧 Whaley Admin</p>
-            <p class="footer-credit">Made with 🤖 by <a href="https://github.com/jonscafe/whaley" target="_blank"
-                    rel="noopener">keii</a></p>
-        </footer>
+            <!-- Footer -->
+            <footer class="footer">
+                <p>Whaley Admin</p>
+                <p class="footer-credit">Built by <a href="https://github.com/jonscafe/whaley" target="_blank"
+                        rel="noopener">keii</a></p>
+            </footer>
+        </main>
     </div>
 
     <!-- Toast Container -->
@@ -2268,6 +2594,23 @@
         let monitoringInstancesPage = 1;
         let monitoringInstancesTotal = 0;
         let monitoringLoadInFlight = false;
+
+        const ICONS = {
+            dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></svg>',
+            logs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4.5h9l3.5 3.5v11.5H6z" stroke-linejoin="round"/><path d="M9 11h6M9 14.5h6M9 18h4"/></svg>',
+            flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 4v16" stroke-linecap="round"/><path d="M6 4.5h11l-3 3.5 3 3.5H6z" stroke-linejoin="round"/></svg>',
+            box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 8 12 4l8.5 4-8.5 4-8.5-4Z" stroke-linejoin="round"/><path d="M3.5 8v8l8.5 4 8.5-4V8" stroke-linejoin="round"/><path d="M12 12v8"/></svg>',
+            chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .35 1.9l.05.05a2 2 0 1 1-2.85 2.8l-.05-.05a1.7 1.7 0 0 0-1.9-.35 1.7 1.7 0 0 0-1 1.55V19.5a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.9.35l-.05.05a2 2 0 1 1-2.85-2.8l.05-.05a1.7 1.7 0 0 0 .35-1.9 1.7 1.7 0 0 0-1.55-1H4.5a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.35-1.9l-.05-.05a2 2 0 1 1 2.85-2.85l.05.05a1.7 1.7 0 0 0 1.9.35h0a1.7 1.7 0 0 0 1-1.55V4.5a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.9-.35l.05-.05a2 2 0 1 1 2.85 2.85l-.05.05a1.7 1.7 0 0 0-.35 1.9v0a1.7 1.7 0 0 0 1.55 1h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.55 1z" stroke-linejoin="round"/></svg>',
+            key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5 18 5M16 7l2 2M13.3 9.7l2 2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3.5 19.5 7v5.5c0 5-3.3 7.6-7.5 9-4.2-1.4-7.5-4-7.5-9V7Z" stroke-linejoin="round"/></svg>',
+            trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 7h14M9.5 7V5a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 5v2M7 7l1 13h8l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" stroke-linejoin="round"/><circle cx="12" cy="12" r="3"/></svg>',
+            file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20Z" stroke-linejoin="round"/><path d="M14 3.5V8h4"/></svg>',
+            folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 6h5l2 2h10v11a.5.5 0 0 1-.5.5h-16A.5.5 0 0 1 3.5 19Z" stroke-linejoin="round"/></svg>',
+            folderOpen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3.5 6h5l2 2h9.5l-1.5 11h-13.5z" stroke-linejoin="round"/><path d="M3.5 6v13" /></svg>',
+            link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9.5 14.5 14.5 9.5" stroke-linecap="round"/><path d="M11 7.5 12.7 5.8a3.2 3.2 0 0 1 4.5 4.5L15.5 12" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 16.5 11.3 18.2a3.2 3.2 0 0 1-4.5-4.5L8.5 12" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        };
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -2316,7 +2659,7 @@
 
         function updateAdminAuthCopy() {
             const isCtfd = adminAuthMode === 'ctfd';
-            document.getElementById('admin-auth-title').textContent = isCtfd ? '🔐 CTFd Admin Login' : '🔐 Admin Authentication';
+            document.getElementById('admin-auth-title').textContent = isCtfd ? 'CTFd Admin Login' : 'Admin Authentication';
             document.getElementById('admin-auth-description').textContent = isCtfd
                 ? 'Use a CTFd access token from an admin user. Whaley checks your CTFd role before enabling the panel.'
                 : 'Enter the local admin secret key to access the dashboard.';
@@ -2411,6 +2754,11 @@
                 p.classList.toggle('active', p.id === `page-${page}`);
             });
 
+            // Close the off-canvas sidebar drawer on narrow viewports after navigating
+            if (window.innerWidth <= 700) {
+                toggleSidebar(false);
+            }
+
             // Load data for the page
             loadPageData(page);
         }
@@ -2489,8 +2837,18 @@
         }
 
         function showAdminContent() {
-            document.getElementById('admin-auth-section').classList.add('hidden');
+            document.getElementById('admin-auth-wrapper').classList.add('hidden');
             document.getElementById('admin-content').classList.remove('hidden');
+        }
+
+        function toggleSidebar(force) {
+            const sidebar = document.getElementById('admin-sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            const shouldOpen = typeof force === 'boolean' ? force : !sidebar.classList.contains('open');
+            sidebar.classList.toggle('open', shouldOpen);
+            if (backdrop) {
+                backdrop.classList.toggle('open', shouldOpen);
+            }
         }
 
         async function adminApi(endpoint, method = 'GET', body = null) {
@@ -2579,10 +2937,10 @@
                 const modeCardEl = document.getElementById('stat-mode-card');
                 if (modeEl) {
                     if (configData.team_mode) {
-                        modeEl.textContent = '👥 Team';
+                        modeEl.textContent = 'Team';
                         modeEl.style.color = 'var(--accent-success)';
                     } else {
-                        modeEl.textContent = '👤 User';
+                        modeEl.textContent = 'User';
                         modeEl.style.color = 'var(--accent-primary)';
                     }
                 }
@@ -2617,7 +2975,7 @@
                 if (instances.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <span class="empty-icon">📦</span>
+                            <span class="empty-icon"></span>
                             <p>No active instances</p>
                         </div>
                     `;
@@ -2651,26 +3009,26 @@
                                     <span class="challenge-category category-web">${instance.instance_id}</span>
                                 </div>
                                 <div class="instance-admin-details">
-                                    <span>👤 ${escapeHtml(instance.owner_type || 'user')}: <strong>${escapeHtml(displayName)}</strong></span>
-                                    <span>🔌 Ports: <code>${escapeHtml(portsStr || 'none')}</code></span>
-                                    <span>🌐 URL: <code>${escapeHtml(instance.public_url || 'N/A')}</code></span>
-                                    <span>📦 Containers: ${instance.container_count || 0}</span>
+                                    <span>${escapeHtml(instance.owner_type || 'user')}: <strong>${escapeHtml(displayName)}</strong></span>
+                                    <span>Ports: <code>${escapeHtml(portsStr || 'none')}</code></span>
+                                    <span>URL: <code>${escapeHtml(instance.public_url || 'N/A')}</code></span>
+                                    <span>Containers: ${instance.container_count || 0}</span>
                                     <span>⏰ Expires: ${formatTime(instance.expires_at)} (${escapeHtml(expiresIn)})</span>
-                                    ${instance.error_message ? `<span style="color: var(--accent-danger);">⚠️ ${escapeHtml(instance.error_message)}</span>` : ''}
+                                    ${instance.error_message ? `<span style="color: var(--accent-danger);">${escapeHtml(instance.error_message)}</span>` : ''}
                                 </div>
                             </div>
                             <div class="instance-actions">
                                 <button class="btn btn-secondary btn-sm" onclick="showInstanceFirewall(${jsArg(instance.instance_id)})">
-                                    🛡 Firewall
+                                    Firewall
                                 </button>
                                 <button class="btn btn-secondary btn-sm" onclick="showInstanceMetrics(${jsArg(instance.instance_id)})">
-                                    📈 Metrics
+                                    Metrics
                                 </button>
                                 <button class="btn btn-secondary btn-sm" onclick="showInstanceLogs(${jsArg(instance.instance_id)})">
-                                    📜 Logs
+                                    Logs
                                 </button>
                                 <button class="btn btn-danger btn-sm" onclick="adminStopInstance(${jsArg(instance.instance_id)})">
-                                    🛑 Force Stop
+                                    Force Stop
                                 </button>
                             </div>
                         </div>
@@ -3036,6 +3394,118 @@ ${rows}
             loadLogs();
         }
 
+        // Visit Logs tab state
+        let currentVisitPage = 0;
+        let totalVisitLogs = 0;
+        let visitDebounceTimer = null;
+
+        function debounceLoadVisitLogs() {
+            clearTimeout(visitDebounceTimer);
+            visitDebounceTimer = setTimeout(() => {
+                currentVisitPage = 0;
+                loadVisitLogs();
+            }, 300);
+        }
+
+        async function loadVisitLogs() {
+            const tbody = document.getElementById('visit-logs-body');
+            const paginationDiv = document.getElementById('pagination-visits');
+            const suspiciousOnly = document.getElementById('filter-visit-suspicious').value === 'suspicious';
+            const userFilter = document.getElementById('filter-visit-user').value;
+            const limit = parseInt(document.getElementById('filter-visit-limit').value);
+
+            let url = `/admin/api/visit-logs?limit=${limit}&offset=${currentVisitPage * limit}`;
+            if (suspiciousOnly) url += `&suspicious_only=true`;
+            if (userFilter) url += `&username=${encodeURIComponent(userFilter)}`;
+
+            try {
+                const data = await adminApi(url);
+                const logs = data.logs || [];
+                totalVisitLogs = data.total || 0;
+
+                if (logs.length === 0 && currentVisitPage === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No visit logs found</td></tr>';
+                    paginationDiv.innerHTML = '';
+                    return;
+                }
+
+                if (logs.length === 0 && currentVisitPage > 0) {
+                    currentVisitPage--;
+                    loadVisitLogs();
+                    return;
+                }
+
+                tbody.innerHTML = logs.map(log => {
+                    return `
+                        <tr>
+                            <td class="log-time">${formatTime(log.timestamp)}</td>
+                            <td><span class="log-event event-${log.event_type}">${log.event_type}</span></td>
+                            <td class="log-user">${escapeHtml(log.username || '-')}</td>
+                            <td>${escapeHtml(log.instance_id || '-')}</td>
+                            <td>${escapeHtml(log.challenge_id || '-')}</td>
+                            <td>${escapeHtml(log.ip_address || '-')}</td>
+                            <td class="log-message" title="${escapeHtml(log.message)}">${escapeHtml(log.message)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                renderVisitPagination(totalVisitLogs, limit);
+
+            } catch (error) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load visit logs</td></tr>';
+                paginationDiv.innerHTML = '';
+            }
+        }
+
+        function renderVisitPagination(total, limit) {
+            const paginationDiv = document.getElementById('pagination-visits');
+            const totalPages = Math.ceil(total / limit);
+
+            if (totalPages <= 1) {
+                paginationDiv.innerHTML = `<span class="page-info">Showing ${total} entries</span>`;
+                return;
+            }
+
+            let html = '';
+            html += `<button onclick="goToVisitPage(${currentVisitPage - 1})" ${currentVisitPage === 0 ? 'disabled' : ''}>« Prev</button>`;
+
+            const maxButtons = 5;
+            let startPage = Math.max(0, currentVisitPage - Math.floor(maxButtons / 2));
+            let endPage = Math.min(totalPages - 1, startPage + maxButtons - 1);
+
+            if (endPage - startPage < maxButtons - 1) {
+                startPage = Math.max(0, endPage - maxButtons + 1);
+            }
+
+            if (startPage > 0) {
+                html += `<button onclick="goToVisitPage(0)">1</button>`;
+                if (startPage > 1) html += `<span class="page-info">...</span>`;
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button onclick="goToVisitPage(${i})" class="${i === currentVisitPage ? 'active' : ''}">${i + 1}</button>`;
+            }
+
+            if (endPage < totalPages - 1) {
+                if (endPage < totalPages - 2) html += `<span class="page-info">...</span>`;
+                html += `<button onclick="goToVisitPage(${totalPages - 1})">${totalPages}</button>`;
+            }
+
+            html += `<button onclick="goToVisitPage(${currentVisitPage + 1})" ${currentVisitPage >= totalPages - 1 ? 'disabled' : ''}>Next »</button>`;
+
+            const start = currentVisitPage * limit + 1;
+            const end = Math.min((currentVisitPage + 1) * limit, total);
+            html += `<span class="page-info">Showing ${start}-${end} of ${total}</span>`;
+
+            paginationDiv.innerHTML = html;
+        }
+
+        function goToVisitPage(page) {
+            if (page < 0) return;
+            currentVisitPage = page;
+            loadVisitLogs();
+        }
+
         async function exportLogsJSON() {
             try {
                 showToast('Fetching all logs...', 'info');
@@ -3154,6 +3624,7 @@ ${rows}
 
             // Show/hide sections
             document.getElementById('section-events').classList.toggle('hidden', tab !== 'events');
+            document.getElementById('section-visits').classList.toggle('hidden', tab !== 'visits');
             document.getElementById('section-ports').classList.toggle('hidden', tab !== 'ports');
             document.getElementById('section-forensics').classList.toggle('hidden', tab !== 'forensics');
             document.getElementById('section-pcap').classList.toggle('hidden', tab !== 'pcap');
@@ -3161,6 +3632,8 @@ ${rows}
             // Load data
             if (tab === 'events') {
                 loadLogs();
+            } else if (tab === 'visits') {
+                loadVisitLogs();
             } else if (tab === 'ports') {
                 loadUserPorts();
             } else if (tab === 'forensics') {
@@ -3233,7 +3706,7 @@ ${rows}
                             <td>${portMappings}</td>
                             <td>
                                 <button class="btn btn-danger btn-sm" onclick="deleteUserPorts(${jsArg(userId)}, ${jsArg(challengeId)})" title="Delete mapping">
-                                    🗑️
+                                    ${ICONS.trash}
                                 </button>
                             </td>
                         </tr>
@@ -3282,7 +3755,7 @@ ${rows}
         }
 
         async function clearAllUserPorts() {
-            if (!confirm('⚠️ Clear ALL user port mappings?\n\nThis will reset persistent ports for ALL users.\nThey will get new random ports on next spawn.')) {
+            if (!confirm('Clear ALL user port mappings?\n\nThis will reset persistent ports for ALL users.\nThey will get new random ports on next spawn.')) {
                 return;
             }
 
@@ -3333,8 +3806,12 @@ ${rows}
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
 
-            const icons = { success: '✅', error: '❌', info: 'ℹ️' };
-            toast.innerHTML = `<span>${icons[type] || icons.info}</span><span>${escapeHtml(message)}</span>`;
+            const icons = {
+                success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.3l2.3 2.3 4.7-5.1" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6" stroke-linecap="round"/></svg>',
+                info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5" stroke-linecap="round"/><circle cx="12" cy="8" r="0.75" fill="currentColor" stroke="none"/></svg>',
+            };
+            toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${escapeHtml(message)}</span>`;
 
             container.appendChild(toast);
             setTimeout(() => {
@@ -3446,7 +3923,7 @@ ${rows}
 
             tbody.innerHTML = pageItems.map(log => {
                 const typeClass = log.capture_type === 'auto' ? 'auto' : 'live';
-                const typeLabel = log.capture_type === 'auto' ? '🤖 Auto' : '📸 Live';
+                const typeLabel = log.capture_type === 'auto' ? 'Auto' : 'Live';
                 const sizeKB = Math.round(log.file_size_bytes / 1024);
                 const sizeDisplay = sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`;
 
@@ -3477,10 +3954,10 @@ ${rows}
                     <td>${sizeDisplay}</td>
                     <td>
                         <button class="btn btn-secondary btn-sm" onclick="viewForensicsLog(${jsArg(log.log_id)})" title="View Log">
-                            👁️
+                            ${ICONS.eye}
                         </button>
                         <button class="btn btn-danger btn-sm" onclick="deleteForensicsLog(${jsArg(log.log_id)})" title="Delete">
-                            🗑️
+                            ${ICONS.trash}
                         </button>
                     </td>
                 </tr>
@@ -3497,7 +3974,7 @@ ${rows}
             // Confirmation when enabling
             if (enabled) {
                 const confirmed = confirm(
-                    '⚠️ Enable Auto Capture?\n\n' +
+                    'Enable Auto Capture?\n\n' +
                     'This will automatically dump container logs when instances terminate.\n\n' +
                     'Impact:\n' +
                     '• Additional disk space required (+10-30 GB)\n' +
@@ -3594,15 +4071,15 @@ ${rows}
                 modal.innerHTML = `
                     <div class="modal-content" style="max-width: 900px; max-height: 80vh; display: flex; flex-direction: column;">
                         <div class="modal-header">
-                            <h3>🔍 Forensics Log: ${escapeHtml(logId)}</h3>
-                            <button class="btn btn-secondary btn-sm" onclick="closeForensicsModal()">✕</button>
+                            <h3>Forensics Log: ${escapeHtml(logId)}</h3>
+                            <button class="btn btn-secondary btn-sm" onclick="closeForensicsModal()"></button>
                         </div>
                         <div class="modal-body" style="overflow: auto; flex: 1;">
                             <pre style="background: var(--bg-primary); padding: 16px; border-radius: var(--radius-sm); font-size: 0.8rem; white-space: pre-wrap; word-wrap: break-word; overflow-x: auto; margin: 0;">${escapeHtml(data.content)}</pre>
                         </div>
                         <div class="modal-footer">
-                            <button class="btn btn-primary btn-sm" onclick="copyForensicsLog()">📋 Copy to Clipboard</button>
-                            <button class="btn btn-secondary btn-sm" onclick="downloadForensicsLog(${jsArg(logId)})">💾 Download</button>
+                            <button class="btn btn-primary btn-sm" onclick="copyForensicsLog()">Copy to Clipboard</button>
+                            <button class="btn btn-secondary btn-sm" onclick="downloadForensicsLog(${jsArg(logId)})">Download</button>
                             <button class="btn btn-secondary btn-sm" onclick="closeForensicsModal()">Close</button>
                         </div>
                     </div>
@@ -3672,7 +4149,7 @@ ${rows}
         }
 
         async function clearForensicsLogs() {
-            if (!confirm('⚠️ Delete ALL forensics logs?\n\nThis action cannot be undone.')) return;
+            if (!confirm('Delete ALL forensics logs?\n\nThis action cannot be undone.')) return;
 
             try {
                 const response = await fetch('/admin/api/forensics/logs', {
@@ -4328,7 +4805,7 @@ ${rows}
             const submissions = suspiciousData;
 
             if (submissions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No suspicious submissions found 🎉</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No suspicious submissions found </td></tr>';
                 updatePagination('suspicious', 0, 0, 0);
                 return;
             }
@@ -4445,7 +4922,7 @@ ${rows}
                     <td>
                         <button class="btn btn-danger btn-sm" onclick="deleteFlagMapping(${m.flag_id}, ${jsArg(isTeamMode ? m.team_name : m.username)})"
                             title="Delete this flag from CTFd">
-                            🗑️
+                            ${ICONS.trash}
                         </button>
                     </td>
                 </tr>
@@ -4529,7 +5006,8 @@ ${rows}
                     </td>
                     <td>
                         ${item.isMapped
-                    ? `<button class="btn btn-danger btn-sm" onclick="removeChallengeMapping(${jsArg(item.localId)})">🗑️</button>`
+                    ? `<button class="btn btn-secondary btn-sm" onclick="syncConnectionInfo(${jsArg(item.localId)})" title="Sync Public Link to CTFd">${ICONS.box}</button>
+                           <button class="btn btn-danger btn-sm" onclick="removeChallengeMapping(${jsArg(item.localId)})">${ICONS.trash}</button>`
                     : ''}
                     </td>
                 </tr>
@@ -4592,6 +5070,25 @@ ${rows}
 
                 showToast(`Removed mapping for ${localId}`, 'success');
                 await loadFlagsData();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        }
+
+        async function syncConnectionInfo(localId) {
+            try {
+                const res = await fetch(`/admin/api/flags/mapping/${encodeURIComponent(localId)}/sync-connection-info`, {
+                    method: 'POST',
+                    headers: adminHeaders()
+                });
+
+                const data = await res.json().catch(() => ({}));
+
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Failed to sync connection info');
+                }
+
+                showToast(`Synced public link to CTFd: ${data.url}`, 'success');
             } catch (error) {
                 showToast(error.message, 'error');
             }
@@ -4681,7 +5178,8 @@ ${rows}
                     </td>
                     <td>
                         ${item.isMapped
-                    ? `<button class="btn btn-danger btn-sm" onclick="removeChallengeMapping(${jsArg(item.localId)})">🗑️</button>`
+                    ? `<button class="btn btn-secondary btn-sm" onclick="syncConnectionInfo(${jsArg(item.localId)})" title="Sync Public Link to CTFd">${ICONS.box}</button>
+                           <button class="btn btn-danger btn-sm" onclick="removeChallengeMapping(${jsArg(item.localId)})">${ICONS.trash}</button>`
                     : ''}
                     </td>
                 </tr>
@@ -4840,7 +5338,7 @@ ${rows}
                         <div class="ctfd-challenge-info">
                             <div class="ctfd-challenge-name">
                                 ${escapeHtml(c.name)}
-                                ${isSuggested ? '<span class="ctfd-challenge-badge warning">⚡ Match Found</span>' : ''}
+                                ${isSuggested ? '<span class="ctfd-challenge-badge warning">Match Found</span>' : ''}
                                 ${isMapped ? '<span class="ctfd-challenge-badge success">✓ Mapped</span>' : ''}
                             </div>
                             <div class="ctfd-challenge-meta">
@@ -5169,7 +5667,7 @@ ${rows}
                             ${hasMetrics ? `
                                 <details style="margin-top: 0.5rem;">
                                     <summary style="cursor: pointer; color: var(--accent-primary); font-size: 0.9rem; user-select: none;">
-                                        📦 ${inst.container_count} Container(s)
+                                        ${inst.container_count} Container(s)
                                     </summary>
                                     <div style="margin-top: 0.5rem;">
                                         ${containersHtml || '<p style="color: var(--text-muted);">No container metrics returned</p>'}
@@ -5222,7 +5720,7 @@ ${rows}
                 if (challenges.length === 0) {
                     container.innerHTML = `
                         <div class="empty-state">
-                            <span class="empty-icon">📦</span>
+                            <span class="empty-icon"></span>
                             <p>No challenges found</p>
                             <p class="empty-hint">Upload a .zip file above to add a challenge</p>
                         </div>
@@ -5237,16 +5735,16 @@ ${rows}
                     let statusColor = 'var(--accent-warning)';
 
                     if (!ch.has_config) {
-                        status = '❌ Missing challenge.yaml/challenge.yml';
+                        status = 'Missing challenge.yaml/challenge.yml';
                         statusColor = 'var(--accent-danger)';
                     } else if (!ch.has_compose) {
-                        status = '❌ Missing docker-compose.yaml/docker-compose.yml';
+                        status = 'Missing docker-compose.yaml/docker-compose.yml';
                         statusColor = 'var(--accent-danger)';
                     } else if (ch.loaded) {
-                        status = '✅ Loaded';
+                        status = 'Loaded';
                         statusColor = 'var(--accent-success)';
                     } else {
-                        status = '⚠️ Not loaded (click Reload)';
+                        status = 'Not loaded (click Reload)';
                         statusColor = 'var(--accent-warning)';
                     }
 
@@ -5264,21 +5762,24 @@ ${rows}
                                 <span style="margin-left: 10px; font-size: 0.8rem; color: ${statusColor}">
                                     ${status}
                                 </span>
-                                ${!isActive ? '<span style="margin-left: 8px; font-size: 0.8rem; color: var(--accent-danger);">🔴 Inactive</span>' : '<span style="margin-left: 8px; font-size: 0.8rem; color: var(--accent-success);">🟢 Active</span>'}
+                                ${!isActive ? '<span style="margin-left: 8px; font-size: 0.8rem; color: var(--accent-danger);">Inactive</span>' : '<span style="margin-left: 8px; font-size: 0.8rem; color: var(--accent-success);">Active</span>'}
                             </div>
                             <div style="display: flex; gap: 8px; align-items: center;">
                                 <label class="toggle-switch" title="${isActive ? 'Active - Click to deactivate' : 'Inactive - Click to activate'}">
                                     <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleChallenge(${challengeArg}, this.checked)">
                                     <span class="toggle-slider"></span>
                                 </label>
+                                <button class="btn btn-secondary btn-sm" onclick="copyChallengePublicLink(${challengeLabelArg})" title="Copy public instance link">
+                                    ${ICONS.link} Copy Link
+                                </button>
                                 <button class="btn btn-primary btn-sm" onclick="selectChallenge(${challengeArg}, ${challengeLabelArg})">
-                                    📝 Edit Files
+                                    Edit Files
                                 </button>
                                 <button class="btn btn-secondary btn-sm" onclick="reloadChallenge(${challengeArg})">
-                                    🔄 Reload
+                                    Reload
                                 </button>
                                 <button class="btn btn-danger btn-sm" onclick="deleteChallenge(${challengeArg})">
-                                    🗑️ Delete
+                                    Delete
                                 </button>
                             </div>
                         </div>
@@ -5287,6 +5788,29 @@ ${rows}
 
             } catch (error) {
                 container.innerHTML = '<div class="empty-state">Failed to load challenges</div>';
+            }
+        }
+
+        async function copyChallengePublicLink(challengeId) {
+            const link = `${window.location.origin}/instance/${encodeURIComponent(challengeId)}`;
+
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(link);
+                } else {
+                    // Fallback for browsers without Clipboard API access (e.g. non-HTTPS)
+                    const tmp = document.createElement('textarea');
+                    tmp.value = link;
+                    tmp.style.position = 'fixed';
+                    tmp.style.opacity = '0';
+                    document.body.appendChild(tmp);
+                    tmp.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(tmp);
+                }
+                showToast('Public link copied to clipboard', 'success');
+            } catch (error) {
+                showToast(`Failed to copy link: ${link}`, 'error');
             }
         }
 
@@ -5431,7 +5955,7 @@ ${rows}
 
         function renderFileTree(items, depth = 0) {
             return items.map(item => {
-                const icon = item.type === 'directory' ? '📁' : getFileIcon(item.name);
+                const icon = item.type === 'directory' ? ICONS.folder : getFileIcon(item.name);
                 const clickHandler = item.type === 'directory'
                     ? `onclick="toggleFolder(this)"`
                     : (item.editable
@@ -5457,14 +5981,7 @@ ${rows}
         }
 
         function getFileIcon(filename) {
-            const ext = filename.split('.').pop().toLowerCase();
-            const icons = {
-                'py': '🐍', 'js': '📜', 'ts': '📘', 'html': '🌐', 'css': '🎨',
-                'yaml': '⚙️', 'yml': '⚙️', 'json': '📋', 'md': '📝', 'txt': '📄',
-                'sh': '💻', 'dockerfile': '🐳', 'sql': '🗃️', 'c': '⚡', 'cpp': '⚡',
-                'go': '🔵', 'rs': '🦀', 'php': '🐘', 'rb': '💎', 'java': '☕'
-            };
-            return icons[ext] || '📄';
+            return ICONS.file;
         }
 
         function toggleFolder(element) {
@@ -5472,7 +5989,7 @@ ${rows}
             if (children && children.classList.contains('file-tree-children')) {
                 children.style.display = children.style.display === 'none' ? 'block' : 'none';
                 const icon = element.querySelector('.icon');
-                icon.textContent = children.style.display === 'none' ? '📁' : '📂';
+                icon.innerHTML = children.style.display === 'none' ? ICONS.folder : ICONS.folderOpen;
             }
         }
 
@@ -5497,10 +6014,10 @@ ${rows}
                         <span class="editor-path">${escapeHtml(filePath)}</span>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-primary btn-sm" onclick="saveFile()">
-                                💾 Save
+                                Save
                             </button>
                             <button class="btn btn-danger btn-sm" onclick="deleteFile(${jsArg(filePath)})">
-                                🗑️ Delete
+                                Delete
                             </button>
                         </div>
                     </div>
@@ -5715,7 +6232,7 @@ ${rows}
                             <div class="setting-label">
                                 ${hasOverride ? '<span class="override-dot"></span>' : ''}
                                 ${escapeHtml(s.label)}
-                                ${hasOverride ? `<button class="setting-reset" onclick="resetSetting(${jsArg(key)})" title="Reset to default">↩️</button>` : ''}
+                                ${hasOverride ? `<button class="setting-reset" onclick="resetSetting(${jsArg(key)})" title="Reset to default">↩</button>` : ''}
                             </div>
                             <div class="setting-key">${key}</div>
                             ${inputHtml}
@@ -5808,13 +6325,13 @@ ${rows}
     <div class="modal-overlay" id="sync-wizard-modal" onclick="closeSyncWizard(event)">
         <div class="modal-content" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <h3>🔄 CTFd Sync Wizard</h3>
+                <h3>CTFd Sync Wizard</h3>
                 <button class="modal-close" onclick="closeSyncWizard()">&times;</button>
             </div>
             <div class="modal-body">
                 <p style="color: var(--text-muted); margin-bottom: 16px;">
                     Fetch challenges from CTFd and map them to your local challenges.
-                    <span style="color: var(--accent-warning);">⚡ Suggested</span> matches are highlighted.
+                    <span style="color: var(--accent-warning);">Suggested</span> matches are highlighted.
                 </p>
 
                 <div class="sync-filters">
@@ -5824,7 +6341,7 @@ ${rows}
                         <option value="">All Categories</option>
                     </select>
                     <button class="btn btn-secondary btn-sm" onclick="fetchCtfdChallenges()">
-                        <span class="btn-icon">🔄</span> Refresh
+                        Refresh
                     </button>
                 </div>
 

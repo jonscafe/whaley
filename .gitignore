@@ -59,9 +59,6 @@ challenges/secure-notes/
 .coverage
 htmlcov/
 
-# Test script
-tests/
-
 # Whaley Logs
 logs/*
 
@@ -77,5 +74,8 @@ data/
 challenges/*
 
 # Stress tests
-"whaley-stress.json" 
-"stress-test-state.json" 
+whaley-stress.json
+stress-test-state.json
+
+# Miscellaneous
+PROJECT_ASSESSMENT.md
