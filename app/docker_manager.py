@@ -1530,6 +1530,23 @@ class DockerManager:
             ):
                 continue
 
+            # Safety check: self.instances is always empty on a fresh process
+            # start (it is never persisted/restored across restarts), so
+            # every currently-running instance looks "stale" by the checks
+            # above. Without this guard, every restart of the instancer
+            # would tear down every active player instance on the host.
+            # Only ever remove a project here if none of its containers are
+            # still running -- i.e. it's genuinely orphaned, not just
+            # unknown to this fresh process.
+            try:
+                containers = await self.docker.list_containers_by_project(project_name)
+                if any((c.get("status") or "").lower() == "running" for c in containers):
+                    print(f"[Docker] Skipping stale-cleanup for {project_name}: still has running containers")
+                    continue
+            except Exception as e:
+                print(f"[Docker] Failed to check container status for {project_name}, skipping cleanup to be safe: {e}")
+                continue
+
             try:
                 cleaned = await self.docker.remove_compose_project(
                     project_name=project_name,
