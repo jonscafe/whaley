@@ -2,52 +2,42 @@
 import os
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
-
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
     AsyncEngine,
     async_sessionmaker
 )
-from sqlalchemy import text, inspect
-
+from sqlalchemy import text, inspect, event
 from .models import Base
-
-# Global engine and session factory
 _engine: Optional[AsyncEngine] = None
 _async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
-
-
 def get_database_url() -> str:
-    """Get database URL from environment or use default SQLite."""
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
         return db_url
-    
-    # Default to SQLite in data directory
     data_dir = os.environ.get("DATA_DIR", "/app/data")
     os.makedirs(data_dir, exist_ok=True)
     return f"sqlite+aiosqlite:///{data_dir}/whaley.db"
-
-
 async def init_database(database_url: Optional[str] = None) -> None:
-    """Initialize database connection and create tables."""
     global _engine, _async_session_factory
-    
     if database_url is None:
         database_url = get_database_url()
-    
-    # Create async engine
     if "sqlite" in database_url:
-        # SQLite specific settings
         _engine = create_async_engine(
             database_url,
             echo=False,
             future=True,
             connect_args={"check_same_thread": False}
         )
+        @event.listens_for(_engine.sync_engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
     else:
-        # PostgreSQL/other settings
         _engine = create_async_engine(
             database_url,
             echo=False,
@@ -56,8 +46,6 @@ async def init_database(database_url: Optional[str] = None) -> None:
             max_overflow=10,
             pool_pre_ping=True
         )
-    
-    # Create session factory
     _async_session_factory = async_sessionmaker(
         bind=_engine,
         class_=AsyncSession,
@@ -65,22 +53,11 @@ async def init_database(database_url: Optional[str] = None) -> None:
         autocommit=False,
         autoflush=False
     )
-    
-    # Create all tables
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-        # Lightweight migration: create_all only creates missing *tables*,
-        # not new columns on tables that already exist. event_logs.team_id
-        # was added after initial release, so backfill it on existing DBs.
-        # Check column existence first (rather than relying on ALTER TABLE
-        # to fail-and-be-ignored) because on Postgres a failed statement
-        # poisons the rest of the transaction, aborting the other
-        # migration/index statements below it.
         try:
             def _get_column_names(sync_conn):
                 return {col["name"] for col in inspect(sync_conn).get_columns("event_logs")}
-
             existing_columns = await conn.run_sync(_get_column_names)
             if "team_id" not in existing_columns:
                 await conn.execute(text(
@@ -146,27 +123,18 @@ async def init_database(database_url: Optional[str] = None) -> None:
             ))
         except Exception as exc:
             print(f"[Database] Warning: failed to ensure suspicious dedup index: {exc}")
-    
     print(f"[Database] Initialized: {database_url.split('://')[0]}")
-
-
 async def close_database() -> None:
-    """Close database connections."""
     global _engine, _async_session_factory
-    
     if _engine:
         await _engine.dispose()
         _engine = None
         _async_session_factory = None
         print("[Database] Connection closed")
-
-
 @asynccontextmanager
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    """Get an async database session."""
     if _async_session_factory is None:
         raise RuntimeError("Database not initialized. Call init_database() first.")
-    
     session = _async_session_factory()
     try:
         yield session
@@ -176,10 +144,7 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
         raise
     finally:
         await session.close()
-
-
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
-    """Get the session factory for dependency injection."""
     if _async_session_factory is None:
         raise RuntimeError("Database not initialized. Call init_database() first.")
     return _async_session_factory
