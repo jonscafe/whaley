@@ -469,6 +469,13 @@ For comprehensive documentation, see **[DOCUMENTATION.md](DOCUMENTATION.md)**:
 - 🧪 [Stress Testing](DOCUMENTATION.md#-stress-testing)
 - ⚙️ [Admin Settings & Challenge Management](DOCUMENTATION.md#admin-settings)
 
+<img width="auto" height="auto" alt="Screenshot 2026-07-18 181915" src="https://github.com/user-attachments/assets/c04887dd-30e4-4250-858f-054992085e73" />
+
+**Wreck IT 7.0 Post-Event Technical Note**: During Wreck IT 7.0 (~7-8 challenges, ~2K spawn activity), Whaley's PCAP capture was configured to sniff traffic on every active challenge instance (PCAP_MODE=all), and the periodic background job that compresses rotated capture files every ~10 minutes generated sustained disk I/O spikes (write-heavy, up to ~50 MiB/s) that degraded the instancer's web interface responsiveness and occasionally caused lock-acquisition timeouts on instance actions under load; for future events, PCAP capture should be scoped to selected challenges only (PCAP_MODE=selected / PCAP_SELECTED_CHALLENGES) rather than capturing all instances, to keep this I/O overhead proportional to what's actually needed for forensics.
+
+<img width="auto" height="auto" alt="image" src="https://github.com/user-attachments/assets/9eb98352-9829-40d9-bd4b-29f56c7614f1" />
+
+
 ---
 
 ## 🤝 Contributing
